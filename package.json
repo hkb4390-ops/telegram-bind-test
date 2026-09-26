@@ -1,7 +1,7 @@
 {
   "name": "telegram-bind-test",
   "version": "1.0.0",
-  "description": "Telegram binding backend",
+  "description": "Telegram binding backend with legacy and Hrry bot routes",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
