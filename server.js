@@ -5,10 +5,16 @@ const crypto = require('crypto');
 const cors = require('cors');
 
 const app = express();
+
 app.use(express.json());
 app.use(cors());
 
-// Firebase Admin
+/* =========================================================
+   FIREBASE ADMIN
+   Render Environment Variable:
+   FIREBASE_SERVICE_ACCOUNT
+   ========================================================= */
+
 const serviceAccountString = process.env.FIREBASE_SERVICE_ACCOUNT;
 
 if (!serviceAccountString) {
@@ -22,27 +28,46 @@ if (!serviceAccountString) {
       databaseURL: 'https://hrrybimd-default-rtdb.firebaseio.com/'
     });
 
-  } catch (e) {
+    console.log('Firebase Admin initialized successfully.');
+  } catch (error) {
     console.error(
       'Error parsing FIREBASE_SERVICE_ACCOUNT:',
-      e
+      error.message
     );
   }
 }
 
+/* =========================================================
+   FIREBASE DATABASE
+   ========================================================= */
+
 const db = admin.database();
 
-// IMPORTANT:
-// Put your NEW @HRStudyPublishedBot token in Render Environment Variables.
-// Variable name:
-// TELEGRAM_BOT_TOKEN
+/* =========================================================
+   TELEGRAM
+   Render Environment Variable:
+   TELEGRAM_BOT_TOKEN
+   ========================================================= */
+
 const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 
 const CHANNEL_USERNAME = '@hrbseb10thallcorse';
-const CHANNEL_URL = 'https://t.me/hrbseb10thallcorse';
+
+const CHANNEL_URL =
+  'https://t.me/hrbseb10thallcorse';
+
+const DEFAULT_PUBLIC_BASE_URL =
+  'https://telegram-bind-backend4.onrender.com';
+
+if (!BOT_TOKEN) {
+  console.error('TELEGRAM_BOT_TOKEN is missing!');
+}
+
+/* =========================================================
+   PHOTO URL HELPER
+   ========================================================= */
 
 function withPhotoUrl(data, sessionToken) {
-
   if (!data) return data;
 
   return {
@@ -50,14 +75,19 @@ function withPhotoUrl(data, sessionToken) {
 
     photoUrl:
       data.photoFileId && sessionToken
-        ? `${process.env.PUBLIC_BASE_URL || 'https://telegram-bind-backend4.onrender.com'}/api/profile/photo/${encodeURIComponent(data.telegramId)}?session=${encodeURIComponent(sessionToken)}`
+        ? `${
+            process.env.PUBLIC_BASE_URL ||
+            DEFAULT_PUBLIC_BASE_URL
+          }/api/profile/photo/${encodeURIComponent(
+            data.telegramId
+          )}?session=${encodeURIComponent(sessionToken)}`
         : ''
   };
 }
 
-if (!BOT_TOKEN) {
-  console.error('TELEGRAM_BOT_TOKEN is missing!');
-}
+/* =========================================================
+   SHA256
+   ========================================================= */
 
 function sha256(value) {
   return crypto
@@ -66,7 +96,14 @@ function sha256(value) {
     .digest('hex');
 }
 
+/* =========================================================
+   TELEGRAM API HELPER
+   ========================================================= */
+
 async function telegramApi(method, params = {}) {
+  if (!BOT_TOKEN) {
+    throw new Error('TELEGRAM_BOT_TOKEN is missing');
+  }
 
   const url =
     `https://api.telegram.org/bot${BOT_TOKEN}/${method}`;
@@ -79,43 +116,55 @@ async function telegramApi(method, params = {}) {
   if (!response.data || !response.data.ok) {
     throw new Error(
       response.data?.description ||
-      `Telegram API ${method} failed`
+        `Telegram API ${method} failed`
     );
   }
 
   return response.data.result;
 }
 
+/* =========================================================
+   TELEGRAM SUBSCRIPTION STATUS
+   ========================================================= */
 
-// Telegram considers these states subscribed/joined.
 function isSubscribed(member) {
-
   if (!member) return false;
 
   if (
-    ['creator', 'administrator', 'member']
-      .includes(member.status)
+    [
+      'creator',
+      'administrator',
+      'member'
+    ].includes(member.status)
   ) {
     return true;
   }
 
-  if (member.status === 'restricted') {
-    return member.is_member === true;
+  if (
+    member.status === 'restricted' &&
+    member.is_member === true
+  ) {
+    return true;
   }
 
   return false;
 }
 
+/* =========================================================
+   OLD / EXISTING SUBSCRIPTION CHECK
+   IMPORTANT:
+   Existing apps continue using this helper.
+   ========================================================= */
 
 async function checkChannelSubscription(telegramId) {
-
   try {
-
-    const member =
-      await telegramApi('getChatMember', {
+    const member = await telegramApi(
+      'getChatMember',
+      {
         chat_id: CHANNEL_USERNAME,
         user_id: telegramId
-      });
+      }
+    );
 
     return isSubscribed(member);
 
@@ -123,26 +172,28 @@ async function checkChannelSubscription(telegramId) {
 
     console.error(
       'Subscription check error:',
-      error.response?.data || error.message
+      error.response?.data ||
+        error.message
     );
 
     return false;
   }
 }
 
+/* =========================================================
+   GET TELEGRAM PROFILE PHOTO
+   ========================================================= */
 
 async function getProfilePhotoFileId(userId) {
-
   try {
 
-    const photos =
-      await telegramApi(
-        'getUserProfilePhotos',
-        {
-          user_id: userId,
-          limit: 1
-        }
-      );
+    const photos = await telegramApi(
+      'getUserProfilePhotos',
+      {
+        user_id: userId,
+        limit: 1
+      }
+    );
 
     if (
       !photos ||
@@ -170,6 +221,9 @@ async function getProfilePhotoFileId(userId) {
   }
 }
 
+/* =========================================================
+   CREATE SESSION
+   ========================================================= */
 
 async function makeSession(telegramData) {
 
@@ -189,19 +243,27 @@ async function makeSession(telegramData) {
   return sessionToken;
 }
 
+/* =========================================================
+   FIND BINDING FROM SESSION
+   ========================================================= */
 
 async function getBindingBySession(sessionToken) {
 
-  if (!sessionToken) return null;
+  if (!sessionToken) {
+    return null;
+  }
 
-  const hash = sha256(sessionToken);
+  const hash =
+    sha256(sessionToken);
 
   const snap =
     await db
       .ref(`telegram_sessions/${hash}`)
       .once('value');
 
-  if (!snap.exists()) return null;
+  if (!snap.exists()) {
+    return null;
+  }
 
   const data = snap.val();
 
@@ -210,7 +272,9 @@ async function getBindingBySession(sessionToken) {
       .ref(`telegram_bindings/${data.telegramId}`)
       .once('value');
 
-  if (!bindingSnap.exists()) return null;
+  if (!bindingSnap.exists()) {
+    return null;
+  }
 
   return {
     sessionHash: hash,
@@ -219,10 +283,9 @@ async function getBindingBySession(sessionToken) {
   };
 }
 
-
-// ======================================================
-// HEALTH
-// ======================================================
+/* =========================================================
+   HEALTH
+   ========================================================= */
 
 app.get('/health', (req, res) => {
 
@@ -233,10 +296,9 @@ app.get('/health', (req, res) => {
 
 });
 
-
-// ======================================================
-// START BINDING
-// ======================================================
+/* =========================================================
+   START TELEGRAM BINDING
+   ========================================================= */
 
 app.post('/api/bind/start', async (req, res) => {
 
@@ -257,23 +319,15 @@ app.post('/api/bind/start', async (req, res) => {
     const appName =
       req.body?.appName || 'hrry.test';
 
-
     await db
       .ref(`binding_tokens/${token}`)
       .set({
-
         status: 'pending',
-
         createdAt: Date.now(),
-
         expiresAt,
-
         deviceId,
-
         appName
-
       });
-
 
     res.json({
 
@@ -284,7 +338,8 @@ app.post('/api/bind/start', async (req, res) => {
       telegramUrl:
         `https://t.me/studymodshrry_bot?start=${token}`,
 
-      channelUrl: CHANNEL_URL
+      channelUrl:
+        CHANNEL_URL
 
     });
 
@@ -301,10 +356,9 @@ app.post('/api/bind/start', async (req, res) => {
 
 });
 
-
-// ======================================================
-// BIND STATUS
-// ======================================================
+/* =========================================================
+   BIND STATUS
+   ========================================================= */
 
 app.post('/api/bind/status', async (req, res) => {
 
@@ -319,14 +373,12 @@ app.post('/api/bind/status', async (req, res) => {
 
   }
 
-
   try {
 
     const snapshot =
       await db
         .ref(`binding_tokens/${token}`)
         .once('value');
-
 
     if (!snapshot.exists()) {
 
@@ -337,9 +389,7 @@ app.post('/api/bind/status', async (req, res) => {
 
     }
 
-
     const data = snapshot.val();
-
 
     if (
       Date.now() > data.expiresAt &&
@@ -357,7 +407,6 @@ app.post('/api/bind/status', async (req, res) => {
 
     }
 
-
     if (
       data.status === 'bound' ||
       data.status === 'completed'
@@ -367,7 +416,6 @@ app.post('/api/bind/status', async (req, res) => {
         await checkChannelSubscription(
           data.telegramData.telegramId
         );
-
 
       if (
         data.status === 'completed' &&
@@ -395,7 +443,6 @@ app.post('/api/bind/status', async (req, res) => {
 
       }
 
-
       return res.json({
 
         success: true,
@@ -410,7 +457,6 @@ app.post('/api/bind/status', async (req, res) => {
       });
 
     }
-
 
     return res.json({
 
@@ -436,10 +482,10 @@ app.post('/api/bind/status', async (req, res) => {
 
 });
 
-
-// ======================================================
-// VERIFY SUBSCRIPTION + CREATE SESSION
-// ======================================================
+/* =========================================================
+   BIND CHECK
+   EXISTING APP ROUTE
+   ========================================================= */
 
 app.post('/api/bind/check', async (req, res) => {
 
@@ -454,7 +500,6 @@ app.post('/api/bind/check', async (req, res) => {
 
   }
 
-
   try {
 
     const ref =
@@ -463,43 +508,31 @@ app.post('/api/bind/check', async (req, res) => {
     const snapshot =
       await ref.once('value');
 
-
     if (!snapshot.exists()) {
 
       return res.json({
-
         success: false,
-
-        error:
-          'Binding token not found'
-
+        error: 'Binding token not found'
       });
 
     }
 
-
     const data = snapshot.val();
-
 
     if (!data.telegramData?.telegramId) {
 
       return res.json({
-
         success: false,
-
         error:
           'Telegram account not bound yet'
-
       });
 
     }
-
 
     const subscribed =
       await checkChannelSubscription(
         data.telegramData.telegramId
       );
-
 
     if (!subscribed) {
 
@@ -516,10 +549,8 @@ app.post('/api/bind/check', async (req, res) => {
 
     }
 
-
     let sessionToken =
       data.sessionToken;
-
 
     if (!sessionToken) {
 
@@ -529,7 +560,6 @@ app.post('/api/bind/check', async (req, res) => {
         );
 
     }
-
 
     const updatedBinding = {
 
@@ -551,13 +581,11 @@ app.post('/api/bind/check', async (req, res) => {
 
     };
 
-
     await db
       .ref(
         `telegram_bindings/${data.telegramData.telegramId}`
       )
       .set(updatedBinding);
-
 
     await ref.update({
 
@@ -572,7 +600,6 @@ app.post('/api/bind/check', async (req, res) => {
         Date.now()
 
     });
-
 
     res.json({
 
@@ -607,16 +634,15 @@ app.post('/api/bind/check', async (req, res) => {
 
 });
 
-
-// ======================================================
-// VERIFY EXISTING SESSION
-// ======================================================
+/* =========================================================
+   SESSION CHECK
+   EXISTING APP ROUTE
+   ========================================================= */
 
 app.post('/api/bind/session', async (req, res) => {
 
   const { sessionToken } =
     req.body || {};
-
 
   if (!sessionToken) {
 
@@ -624,13 +650,11 @@ app.post('/api/bind/session', async (req, res) => {
 
       success: false,
 
-      error:
-        'Session missing'
+      error: 'Session missing'
 
     });
 
   }
-
 
   try {
 
@@ -639,26 +663,22 @@ app.post('/api/bind/session', async (req, res) => {
         sessionToken
       );
 
-
     if (!found) {
 
       return res.json({
 
         success: false,
 
-        error:
-          'Session invalid'
+        error: 'Session invalid'
 
       });
 
     }
 
-
     const subscribed =
       await checkChannelSubscription(
         found.binding.telegramId
       );
-
 
     if (!subscribed) {
 
@@ -675,7 +695,6 @@ app.post('/api/bind/session', async (req, res) => {
 
     }
 
-
     await db
       .ref(
         `telegram_bindings/${found.binding.telegramId}`
@@ -688,7 +707,6 @@ app.post('/api/bind/session', async (req, res) => {
           Date.now()
 
       });
-
 
     res.json({
 
@@ -724,16 +742,15 @@ app.post('/api/bind/session', async (req, res) => {
 
 });
 
-
-// ======================================================
-// UNBIND
-// ======================================================
+/* =========================================================
+   UNBIND
+   EXISTING APP ROUTE
+   ========================================================= */
 
 app.post('/api/bind/unbind', async (req, res) => {
 
   const { telegramId } =
     req.body || {};
-
 
   if (!telegramId) {
 
@@ -743,59 +760,66 @@ app.post('/api/bind/unbind', async (req, res) => {
 
   }
 
+  try {
 
-  const sessionSnap =
-    await db
-      .ref('telegram_sessions')
-      .once('value');
+    const sessionSnap =
+      await db
+        .ref('telegram_sessions')
+        .once('value');
 
+    const sessions =
+      sessionSnap.val() || {};
 
-  const sessions =
-    sessionSnap.val() || {};
+    const updates = {};
 
-
-  const updates = {};
-
-
-  for (
-    const [hash, value]
-    of Object.entries(sessions)
-  ) {
-
-    if (
-      String(value.telegramId) ===
-      String(telegramId)
+    for (
+      const [hash, value]
+      of Object.entries(sessions)
     ) {
 
-      updates[
-        `telegram_sessions/${hash}`
-      ] = null;
+      if (
+        String(value.telegramId) ===
+        String(telegramId)
+      ) {
+
+        updates[
+          `telegram_sessions/${hash}`
+        ] = null;
+
+      }
 
     }
 
+    updates[
+      `telegram_bindings/${telegramId}`
+    ] = null;
+
+    await db.ref().update(updates);
+
+    res.json({
+      success: true
+    });
+
+  } catch (error) {
+
+    console.error(error);
+
+    res.status(500).json({
+
+      success: false,
+
+      error:
+        'Unbind failed'
+
+    });
+
   }
-
-
-  updates[
-    `telegram_bindings/${telegramId}`
-  ] = null;
-
-
-  await db
-    .ref()
-    .update(updates);
-
-
-  res.json({
-    success: true
-  });
 
 });
 
-
-// ======================================================
-// PROFILE PHOTO
-// ======================================================
+/* =========================================================
+   PROFILE PHOTO PROXY
+   ========================================================= */
 
 app.get(
   '/api/profile/photo/:telegramId',
@@ -806,36 +830,31 @@ app.get(
       const session =
         req.query.session;
 
-
       const found =
         await getBindingBySession(
           session
         );
-
 
       if (
         !found ||
         String(
           found.binding.telegramId
         ) !==
-        String(
-          req.params.telegramId
-        )
+          String(req.params.telegramId)
       ) {
 
         return res.status(403).end();
 
       }
 
-
       const fileId =
         found.binding.photoFileId;
 
-
       if (!fileId) {
-        return res.status(404).end();
-      }
 
+        return res.status(404).end();
+
+      }
 
       const file =
         await telegramApi(
@@ -844,7 +863,6 @@ app.get(
             file_id: fileId
           }
         );
-
 
       const image =
         await axios.get(
@@ -855,13 +873,11 @@ app.get(
           }
         );
 
-
       res.setHeader(
         'Content-Type',
         image.headers['content-type'] ||
-        'image/jpeg'
+          'image/jpeg'
       );
-
 
       image.data.pipe(res);
 
@@ -879,171 +895,173 @@ app.get(
   }
 );
 
+/* =========================================================
+   TELEGRAM WEBHOOK
+   ========================================================= */
 
-// ======================================================
-// TELEGRAM WEBHOOK
-// ======================================================
+app.post('/telegram/webhook', async (req, res) => {
 
-app.post(
-  '/telegram/webhook',
-  async (req, res) => {
+  const update = req.body;
 
-    const update = req.body;
+  try {
 
+    if (
+      update.message?.text?.startsWith('/start ')
+    ) {
 
-    try {
+      const token =
+        update.message.text
+          .split(' ')[1];
+
+      const user =
+        update.message.from;
+
+      const tokenRef =
+        db.ref(
+          `binding_tokens/${token}`
+        );
+
+      const snapshot =
+        await tokenRef.once('value');
+
+      /* -----------------------------------------------------
+         VALID BINDING TOKEN
+         ----------------------------------------------------- */
 
       if (
-        update.message?.text
-          ?.startsWith('/start ')
+        snapshot.exists() &&
+        snapshot.val().status === 'pending' &&
+        snapshot.val().expiresAt >
+          Date.now()
       ) {
 
-        const token =
-          update.message.text
-            .split(' ')[1];
-
-
-        const user =
-          update.message.from;
-
-
-        const tokenRef =
-          db.ref(
-            `binding_tokens/${token}`
+        const photoFileId =
+          await getProfilePhotoFileId(
+            user.id
           );
 
+        const telegramData = {
 
-        const snapshot =
-          await tokenRef.once('value');
+          telegramId:
+            user.id,
 
+          firstName:
+            user.first_name || '',
 
-        if (
-          snapshot.exists() &&
-          snapshot.val().status === 'pending' &&
-          snapshot.val().expiresAt > Date.now()
-        ) {
+          lastName:
+            user.last_name || '',
 
-          const photoFileId =
-            await getProfilePhotoFileId(
-              user.id
-            );
+          username:
+            user.username ||
+            'No Username',
 
+          photoFileId,
 
-          const telegramData = {
+          connectedAt:
+            Date.now()
 
-            telegramId:
-              user.id,
+        };
 
-            firstName:
-              user.first_name || '',
+        await tokenRef.update({
 
-            lastName:
-              user.last_name || '',
+          status: 'bound',
 
-            username:
-              user.username ||
-              'No Username',
+          telegramData
 
-            photoFileId,
+        });
 
-            connectedAt:
-              Date.now()
+        await db
+          .ref(
+            `telegram_bindings/${user.id}`
+          )
+          .set({
 
-          };
+            ...telegramData,
 
+            deviceId:
+              snapshot.val().deviceId || '',
 
-          await tokenRef.update({
+            appName:
+              snapshot.val().appName ||
+              'hrry.test',
 
-            status: 'bound',
-
-            telegramData
+            subscribed: false
 
           });
 
+        await axios.post(
 
-          await db
-            .ref(
-              `telegram_bindings/${user.id}`
-            )
-            .set({
+          `https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`,
 
-              ...telegramData,
+          {
 
-              deviceId:
-                snapshot.val().deviceId ||
-                '',
+            chat_id:
+              user.id,
 
-              appName:
-                snapshot.val().appName ||
-                'hrry.test',
+            text:
+              `✅ Telegram account bind हो गया है, ${user.first_name || 'User'}!\n\nअब ${CHANNEL_URL} पर channel Join करें और app में Check Subscription दबाएँ।`
 
-              subscribed: false
+          }
 
-            });
+        );
 
+      } else {
 
-          await axios.post(
-            `https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`,
-            {
+        /* ---------------------------------------------------
+           INVALID / EXPIRED TOKEN
+           --------------------------------------------------- */
 
-              chat_id: user.id,
+        await axios.post(
 
-              text:
-                `✅ Telegram account bind हो गया है, ${user.first_name || 'User'}!\n\nअब ${CHANNEL_URL} पर channel Join करें और app में Check Subscription दबाएँ।`
+          `https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`,
 
-            }
-          );
+          {
 
-        } else {
+            chat_id:
+              user.id,
 
-          await axios.post(
-            `https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`,
-            {
+            text:
+              '❌ Invalid or expired binding code. Please generate a new code from the app.'
 
-              chat_id: user.id,
+          }
 
-              text:
-                '❌ Invalid or expired binding code. Please generate a new code from the app.'
-
-            }
-          );
-
-        }
+        );
 
       }
 
-    } catch (error) {
-
-      console.error(
-        'Webhook error:',
-        error.response?.data ||
-        error.message
-      );
-
     }
 
+  } catch (error) {
 
-    res.sendStatus(200);
+    console.error(
+
+      'Webhook error:',
+
+      error.response?.data ||
+        error.message
+
+    );
 
   }
-);
 
+  res.sendStatus(200);
 
-// ======================================================
-// HRRY NATIVE APP ACCESS CHECK
-// ======================================================
-//
-// This is an ADDITION.
-// Existing routes above are intentionally unchanged.
-//
-// Native app:
-// POST /api/hrry/access
-//
-// Body:
-// {
-//   "telegramId": 123456789
-// }
-// ======================================================
+});
+
+/* =========================================================
+   HRRY NATIVE APP ONLY
+   SUBSCRIPTION CHECK
+   =========================================================
+
+   IMPORTANT:
+
+   This is a NEW helper.
+
+   Existing apps continue using:
+       checkChannelSubscription()
+
+   This helper does NOT modify the old helper.
+   ========================================================= */
 
 async function checkHrryChannelSubscription(
   telegramId
@@ -1051,27 +1069,38 @@ async function checkHrryChannelSubscription(
 
   try {
 
-    // Resolve the channel username first.
-    // This also gives us the real Telegram chat ID.
+    /*
+     * First resolve the actual Telegram chat.
+     * This gives us the numeric channel ID.
+     */
 
     const chat =
       await telegramApi(
         'getChat',
         {
-          chat_id: CHANNEL_USERNAME
+          chat_id:
+            CHANNEL_USERNAME
         }
       );
 
+    /*
+     * Then check the Telegram user's
+     * membership using the numeric ID.
+     */
 
     const member =
       await telegramApi(
         'getChatMember',
         {
-          chat_id: chat.id,
-          user_id: telegramId
+
+          chat_id:
+            chat.id,
+
+          user_id:
+            telegramId
+
         }
       );
-
 
     return {
 
@@ -1079,7 +1108,8 @@ async function checkHrryChannelSubscription(
         isSubscribed(member),
 
       telegramStatus:
-        member?.status || 'unknown',
+        member?.status ||
+        'unknown',
 
       chatId:
         String(chat.id)
@@ -1089,11 +1119,13 @@ async function checkHrryChannelSubscription(
   } catch (error) {
 
     console.error(
-      'Hrry subscription check error:',
-      error.response?.data ||
-      error.message
-    );
 
+      'Hrry subscription check error:',
+
+      error.response?.data ||
+        error.message
+
+    );
 
     return {
 
@@ -1113,14 +1145,37 @@ async function checkHrryChannelSubscription(
 
 }
 
+/* =========================================================
+   HRRY NATIVE ANDROID APP
+   PACKAGE:
+   com.test.hrry
+   =========================================================
+
+   NEW ENDPOINT:
+
+       POST /api/hrry/access
+
+   Request:
+
+       {
+         "telegramId": 123456789
+       }
+
+   This endpoint is completely separate from
+   the existing bind/check/session routes.
+   ========================================================= */
 
 app.post(
   '/api/hrry/access',
   async (req, res) => {
 
-    const { telegramId } =
-      req.body || {};
+    const {
+      telegramId
+    } = req.body || {};
 
+    /* -------------------------------------------------------
+       TELEGRAM ID REQUIRED
+       ------------------------------------------------------- */
 
     if (!telegramId) {
 
@@ -1135,8 +1190,11 @@ app.post(
 
     }
 
-
     try {
+
+      /* -----------------------------------------------------
+         FIND TELEGRAM BINDING
+         ----------------------------------------------------- */
 
       const bindingSnap =
         await db
@@ -1145,6 +1203,9 @@ app.post(
           )
           .once('value');
 
+      /* -----------------------------------------------------
+         NOT BOUND
+         ----------------------------------------------------- */
 
       if (!bindingSnap.exists()) {
 
@@ -1165,17 +1226,30 @@ app.post(
 
       }
 
-
       const binding =
         bindingSnap.val() || {};
 
+      /* -----------------------------------------------------
+         BLOCK CHECK
 
-      // Support both possible block fields.
+         Supports both:
+
+         isBlocked: true
+
+         and
+
+         blocked: true
+
+         This keeps compatibility with existing data.
+         ----------------------------------------------------- */
 
       const blocked =
         binding.isBlocked === true ||
         binding.blocked === true;
 
+      /* -----------------------------------------------------
+         BLOCKED USER
+         ----------------------------------------------------- */
 
       if (blocked) {
 
@@ -1196,14 +1270,23 @@ app.post(
 
       }
 
+      /* -----------------------------------------------------
+         REAL TELEGRAM SUBSCRIPTION CHECK
+         ----------------------------------------------------- */
 
-      const verification =
+      const subscription =
         await checkHrryChannelSubscription(
           telegramId
         );
 
+      const subscribed =
+        subscription.subscribed;
 
-      if (!verification.subscribed) {
+      /* -----------------------------------------------------
+         NOT SUBSCRIBED / TELEGRAM API ERROR
+         ----------------------------------------------------- */
+
+      if (!subscribed) {
 
         return res.json({
 
@@ -1221,10 +1304,11 @@ app.post(
           verification: {
 
             status:
-              verification.telegramStatus,
+              subscription.telegramStatus,
 
             error:
-              verification.error || null
+              subscription.error ||
+              null
 
           }
 
@@ -1232,6 +1316,12 @@ app.post(
 
       }
 
+      /* -----------------------------------------------------
+         VERIFIED
+
+         Only update the binding fields needed by Hrry.
+         Existing data is preserved.
+         ----------------------------------------------------- */
 
       await db
         .ref(
@@ -1252,6 +1342,9 @@ app.post(
 
         });
 
+      /* -----------------------------------------------------
+         SUCCESS
+         ----------------------------------------------------- */
 
       return res.json({
 
@@ -1279,11 +1372,13 @@ app.post(
     } catch (error) {
 
       console.error(
-        'Hrry access check error:',
-        error.response?.data ||
-        error.message
-      );
 
+        'Native app access check error:',
+
+        error.response?.data ||
+          error.message
+
+      );
 
       return res.status(500).json({
 
@@ -1299,20 +1394,20 @@ app.post(
   }
 );
 
-
-// ======================================================
-// SERVER
-// ======================================================
+/* =========================================================
+   SERVER
+   ========================================================= */
 
 const PORT =
   process.env.PORT || 3000;
 
-
 app.listen(
   PORT,
   () => {
+
     console.log(
       `Server is running on port ${PORT}`
     );
+
   }
 );
