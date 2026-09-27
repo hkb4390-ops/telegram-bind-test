@@ -13,39 +13,34 @@ const app = express();
 
 const PORT = process.env.PORT || 3000;
 
-const BOT_TOKEN =
-  process.env.BOT_TOKEN || "";
+const BOT_TOKEN = process.env.BOT_TOKEN || "";
 
-const TELEGRAM_CHAT_ID =
-  String(
-    process.env.TELEGRAM_CHAT_ID ||
-    "-1004330203694"
-  );
+const TELEGRAM_CHAT_ID = String(
+  process.env.TELEGRAM_CHAT_ID || "-1004330203694"
+);
 
-const ADMIN_TELEGRAM_ID =
-  String(
-    process.env.ADMIN_TELEGRAM_ID ||
-    "8458244469"
-  );
+const ADMIN_TELEGRAM_ID = String(
+  process.env.ADMIN_TELEGRAM_ID || "8458244469"
+);
 
-const FIREBASE_DATABASE_URL =
-  (
-    process.env.FIREBASE_DATABASE_URL ||
-    "https://hyuuu-732f9-default-rtdb.firebaseio.com"
-  ).replace(/\/$/, "");
+const FIREBASE_DATABASE_URL = (
+  process.env.FIREBASE_DATABASE_URL ||
+  "https://hyuuu-732f9-default-rtdb.firebaseio.com"
+).replace(/\/$/, "");
 
 const FIREBASE_AUTH_TOKEN =
   process.env.FIREBASE_AUTH_TOKEN || "";
 
-const APP_NAME =
-  process.env.APP_NAME || "hrry.test";
-
+/*
+  IMPORTANT:
+  Existing HRRY test app expects this exact app name.
+*/
+const APP_NAME = "hrry.test";
 
 if (!BOT_TOKEN) {
   console.error("❌ BOT_TOKEN missing");
   process.exit(1);
 }
-
 
 /* =========================================================
    EXPRESS
@@ -80,47 +75,36 @@ app.use(
   })
 );
 
-
 /* =========================================================
    MULTER
 ========================================================= */
 
-const upload =
-  multer({
-    storage:
-      multer.memoryStorage(),
+const upload = multer({
+  storage: multer.memoryStorage(),
 
-    limits: {
-      fileSize:
-        5 * 1024 * 1024
-    },
+  limits: {
+    fileSize: 5 * 1024 * 1024
+  },
 
-    fileFilter:
-      (req, file, cb) => {
+  fileFilter: (req, file, cb) => {
+    const allowed = [
+      "image/jpeg",
+      "image/jpg",
+      "image/png",
+      "image/webp"
+    ];
 
-        const allowed = [
-          "image/jpeg",
-          "image/jpg",
-          "image/png",
-          "image/webp"
-        ];
+    if (!allowed.includes(file.mimetype)) {
+      return cb(
+        new Error(
+          "Only JPG, PNG and WEBP images are allowed."
+        )
+      );
+    }
 
-        if (
-          !allowed.includes(
-            file.mimetype
-          )
-        ) {
-          return cb(
-            new Error(
-              "Only JPG, PNG and WEBP images are allowed."
-            )
-          );
-        }
-
-        cb(null, true);
-      }
-  });
-
+    cb(null, true);
+  }
+});
 
 /* =========================================================
    BASIC HELPERS
@@ -130,133 +114,64 @@ function nowISO() {
   return new Date().toISOString();
 }
 
-
-function readableTime(
-  date = new Date()
-) {
-  return new Intl.DateTimeFormat(
-    "en-IN",
-    {
-      timeZone:
-        "Asia/Kolkata",
-
-      day:
-        "2-digit",
-
-      month:
-        "short",
-
-      year:
-        "numeric",
-
-      hour:
-        "2-digit",
-
-      minute:
-        "2-digit",
-
-      hour12:
-        true
-    }
-  ).format(date);
+function readableTime(date = new Date()) {
+  return new Intl.DateTimeFormat("en-IN", {
+    timeZone: "Asia/Kolkata",
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: true
+  }).format(date);
 }
 
-
-function escapeHTML(
-  value
-) {
-  return String(
-    value ?? ""
-  )
-    .replace(
-      /&/g,
-      "&amp;"
-    )
-    .replace(
-      /</g,
-      "&lt;"
-    )
-    .replace(
-      />/g,
-      "&gt;"
-    )
-    .replace(
-      /"/g,
-      "&quot;"
-    )
-    .replace(
-      /'/g,
-      "&#039;"
-    );
+function escapeHTML(value) {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
 }
 
-
-function cleanPhone(
-  value
-) {
-  return String(
-    value || ""
-  )
-    .replace(
-      /[^\d+]/g,
-      ""
-    )
+function cleanPhone(value) {
+  return String(value || "")
+    .replace(/[^\d+]/g, "")
     .trim();
 }
 
-
 function generateRequestId() {
-
   return (
     "REQ-" +
-    Date.now()
-      .toString(36)
-      .toUpperCase() +
+    Date.now().toString(36).toUpperCase() +
     "-" +
-    crypto
-      .randomBytes(4)
-      .toString("hex")
-      .toUpperCase()
+    crypto.randomBytes(4).toString("hex").toUpperCase()
   );
 }
 
-
 /*
-  SAME key style as your existing hrry.test
-  admin system:
+  EXACT SAME KEY STYLE AS HRRY TEST APP
 
   HRRY-XXXX-XXXX-XXXX
 */
 
 function generateKey() {
-
   const chars =
     "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 
-  let key =
-    "HRRY-";
+  let key = "HRRY-";
 
-  for (
-    let block = 0;
-    block < 4;
-    block++
-  ) {
-
+  for (let block = 0; block < 4; block++) {
     if (block > 0) {
       key += "-";
     }
 
-    for (
-      let i = 0;
-      i < 4;
-      i++
-    ) {
-
+    for (let i = 0; i < 4; i++) {
       key +=
         chars[
           Math.floor(
-            Math.random() *
-            chars.length
+            Math.random() * chars.length
           )
         ];
     }
@@ -265,28 +180,18 @@ function generateKey() {
   return key;
 }
 
-
 /* =========================================================
    FIREBASE
 ========================================================= */
 
-function firebaseURL(
-  path
-) {
-
+function firebaseURL(path) {
   let url =
     FIREBASE_DATABASE_URL +
     "/" +
-    path.replace(
-      /^\/+/,
-      ""
-    ) +
+    path.replace(/^\/+/, "") +
     ".json";
 
-  if (
-    FIREBASE_AUTH_TOKEN
-  ) {
-
+  if (FIREBASE_AUTH_TOKEN) {
     url +=
       "?auth=" +
       encodeURIComponent(
@@ -297,56 +202,34 @@ function firebaseURL(
   return url;
 }
 
-
-async function firebase(
-  method,
-  path,
-  body
-) {
-
+async function firebase(method, path, body) {
   const options = {
     method,
     headers: {
-      "Content-Type":
-        "application/json"
+      "Content-Type": "application/json"
     }
   };
 
-  if (
-    body !== undefined
-  ) {
-
-    options.body =
-      JSON.stringify(
-        body
-      );
+  if (body !== undefined) {
+    options.body = JSON.stringify(body);
   }
 
-  const response =
-    await fetch(
-      firebaseURL(path),
-      options
-    );
+  const response = await fetch(
+    firebaseURL(path),
+    options
+  );
 
-  const text =
-    await response.text();
+  const text = await response.text();
 
   let data = null;
 
   try {
-    data =
-      text
-        ? JSON.parse(text)
-        : null;
-  }
-  catch {
+    data = text ? JSON.parse(text) : null;
+  } catch {
     data = text;
   }
 
-  if (
-    !response.ok
-  ) {
-
+  if (!response.ok) {
     throw new Error(
       `Firebase ${response.status}: ${text}`
     );
@@ -355,44 +238,28 @@ async function firebase(
   return data;
 }
 
-
 /* =========================================================
    TELEGRAM API
-   DIRECT API — NO TELEGRAM LIBRARY
 ========================================================= */
 
 const TELEGRAM_API =
   `https://api.telegram.org/bot${BOT_TOKEN}`;
 
+async function telegram(method, body = {}) {
+  const response = await fetch(
+    `${TELEGRAM_API}/${method}`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify(body)
+    }
+  );
 
-async function telegram(
-  method,
-  body = {}
-) {
+  const data = await response.json();
 
-  const response =
-    await fetch(
-      `${TELEGRAM_API}/${method}`,
-      {
-        method: "POST",
-
-        headers: {
-          "Content-Type":
-            "application/json"
-        },
-
-        body:
-          JSON.stringify(body)
-      }
-    );
-
-  const data =
-    await response.json();
-
-  if (
-    !data.ok
-  ) {
-
+  if (!data.ok) {
     throw new Error(
       `Telegram ${method} failed: ` +
       JSON.stringify(data)
@@ -402,9 +269,8 @@ async function telegram(
   return data.result;
 }
 
-
 /* =========================================================
-   SEND PHOTO TO TELEGRAM
+   SEND PHOTO
 ========================================================= */
 
 async function sendTelegramPhoto(
@@ -413,19 +279,16 @@ async function sendTelegramPhoto(
   mimeType,
   caption
 ) {
+  const form = new FormData();
 
-  const form =
-    new FormData();
-
-  const blob =
-    new Blob(
-      [buffer],
-      {
-        type:
-          mimeType ||
-          "image/jpeg"
-      }
-    );
+  const blob = new Blob(
+    [buffer],
+    {
+      type:
+        mimeType ||
+        "image/jpeg"
+    }
+  );
 
   form.append(
     "chat_id",
@@ -435,8 +298,7 @@ async function sendTelegramPhoto(
   form.append(
     "photo",
     blob,
-    filename ||
-      "payment.jpg"
+    filename || "payment.jpg"
   );
 
   form.append(
@@ -449,47 +311,31 @@ async function sendTelegramPhoto(
     "HTML"
   );
 
+  const response = await fetch(
+    `${TELEGRAM_API}/sendPhoto`,
+    {
+      method: "POST",
+      body: form
+    }
+  );
 
-  const response =
-    await fetch(
-      `${TELEGRAM_API}/sendPhoto`,
-      {
-        method:
-          "POST",
+  const data = await response.json();
 
-        body:
-          form
-      }
-    );
-
-
-  const data =
-    await response.json();
-
-
-  if (
-    !data.ok
-  ) {
-
+  if (!data.ok) {
     throw new Error(
       "Telegram sendPhoto failed: " +
       JSON.stringify(data)
     );
   }
 
-
   return data.result;
 }
 
-
 /* =========================================================
-   TELEGRAM MESSAGE CAPTIONS
+   TELEGRAM CAPTIONS
 ========================================================= */
 
-function pendingCaption(
-  r
-) {
-
+function pendingCaption(r) {
   return `
 <b>💳 PAYMENT KEY REQUEST RECEIVED</b>
 
@@ -522,11 +368,7 @@ ${escapeHTML(r.createdAtReadable)}
 `.trim();
 }
 
-
-function acceptedCaption(
-  r
-) {
-
+function acceptedCaption(r) {
   return `
 <b>💳 PAYMENT KEY REQUEST RECEIVED</b>
 
@@ -569,11 +411,7 @@ ${escapeHTML(r.actionTime)}
 `.trim();
 }
 
-
-function rejectedCaption(
-  r
-) {
-
+function rejectedCaption(r) {
   return `
 <b>💳 PAYMENT KEY REQUEST RECEIVED</b>
 
@@ -612,30 +450,21 @@ ${escapeHTML(r.actionTime)}
 `.trim();
 }
 
-
 /* =========================================================
    TELEGRAM BUTTONS
 ========================================================= */
 
-function pendingKeyboard(
-  requestId
-) {
-
+function pendingKeyboard(requestId) {
   return {
     inline_keyboard: [
       [
         {
-          text:
-            "✅ ACCEPT",
-
+          text: "✅ ACCEPT",
           callback_data:
             `accept:${requestId}`
         },
-
         {
-          text:
-            "❌ REJECT",
-
+          text: "❌ REJECT",
           callback_data:
             `reject:${requestId}`
         }
@@ -644,18 +473,12 @@ function pendingKeyboard(
   };
 }
 
-
-function acceptedKeyboard(
-  requestId
-) {
-
+function acceptedKeyboard(requestId) {
   return {
     inline_keyboard: [
       [
         {
-          text:
-            "🟢 ACCEPTED BY ADMIN",
-
+          text: "🟢 ACCEPTED BY ADMIN",
           callback_data:
             `status:accepted:${requestId}`
         }
@@ -664,18 +487,12 @@ function acceptedKeyboard(
   };
 }
 
-
-function rejectedKeyboard(
-  requestId
-) {
-
+function rejectedKeyboard(requestId) {
   return {
     inline_keyboard: [
       [
         {
-          text:
-            "🔴 REJECTED BY ADMIN",
-
+          text: "🔴 REJECTED BY ADMIN",
           callback_data:
             `status:rejected:${requestId}`
         }
@@ -684,9 +501,8 @@ function rejectedKeyboard(
   };
 }
 
-
 /* =========================================================
-   EDIT TELEGRAM PHOTO MESSAGE
+   EDIT TELEGRAM MESSAGE
 ========================================================= */
 
 async function editTelegramMessage(
@@ -695,104 +511,69 @@ async function editTelegramMessage(
   caption,
   keyboard
 ) {
-
   return telegram(
     "editMessageCaption",
     {
-      chat_id:
-        chatId,
-
-      message_id:
-        Number(messageId),
-
+      chat_id: chatId,
+      message_id: Number(messageId),
       caption,
-
-      parse_mode:
-        "HTML",
-
-      reply_markup:
-        keyboard
+      parse_mode: "HTML",
+      reply_markup: keyboard
     }
   );
 }
-
 
 /* =========================================================
    HOME
 ========================================================= */
 
-app.get(
-  "/",
-  (req, res) => {
+app.get("/", (req, res) => {
+  res.send(`
+<!doctype html>
+<html>
+<head>
+<title>${escapeHTML(APP_NAME)}</title>
+<meta name="viewport"
+content="width=device-width,initial-scale=1">
+</head>
 
-    res.send(`
-      <!doctype html>
-      <html>
-      <head>
-        <title>${escapeHTML(APP_NAME)}</title>
-        <meta name="viewport"
-              content="width=device-width,initial-scale=1">
-      </head>
+<body style="
+margin:0;
+padding:40px;
+background:#090b10;
+color:white;
+font-family:Arial;
+text-align:center;
+">
 
-      <body style="
-        margin:0;
-        padding:40px;
-        background:#090b10;
-        color:white;
-        font-family:Arial;
-        text-align:center;
-      ">
+<h1>HRRY KEY SERVER</h1>
 
-        <h1>HRRY KEY SERVER</h1>
+<p>Server is running ✅</p>
 
-        <p>
-          Server is running ✅
-        </p>
+<p>
+Telegram callback system:
+ACTIVE
+</p>
 
-        <p>
-          Telegram callback system:
-          ACTIVE
-        </p>
-
-      </body>
-      </html>
-    `);
-
-  }
-);
-
+</body>
+</html>
+`);
+});
 
 /* =========================================================
    HEALTH
 ========================================================= */
 
-app.get(
-  "/health",
-  (req, res) => {
-
-    res.json({
-      ok:
-        true,
-
-      server:
-        "online",
-
-      telegram:
-        "direct-api-polling",
-
-      callbacks:
-        "enabled",
-
-      app:
-        APP_NAME,
-
-      time:
-        nowISO()
-    });
-
-  }
-);
-
+app.get("/health", (req, res) => {
+  res.json({
+    ok: true,
+    server: "online",
+    telegram: "direct-api-polling",
+    callbacks: "enabled",
+    app: APP_NAME,
+    time: nowISO()
+  });
+});
 
 /* =========================================================
    UPLOAD SCREENSHOT
@@ -800,37 +581,19 @@ app.get(
 
 app.post(
   "/api/upload-screenshot",
-
-  upload.single(
-    "screenshot"
-  ),
-
-  async (
-    req,
-    res
-  ) => {
-
+  upload.single("screenshot"),
+  async (req, res) => {
     try {
-
-      if (
-        !req.file
-      ) {
-
-        return res
-          .status(400)
-          .json({
-            ok:
-              false,
-
-            error:
-              "Payment screenshot is required."
-          });
+      if (!req.file) {
+        return res.status(400).json({
+          ok: false,
+          error:
+            "Payment screenshot is required."
+        });
       }
-
 
       const uploadId =
         crypto.randomUUID();
-
 
       const initialCaption = `
 <b>📸 PAYMENT SCREENSHOT RECEIVED</b>
@@ -844,24 +607,14 @@ app.post(
 <code>${uploadId}</code>
 `.trim();
 
-
-      /*
-        Send photo directly through
-        Telegram Bot API.
-      */
-
       const message =
         await sendTelegramPhoto(
           req.file.buffer,
-
           req.file.originalname ||
             "payment.jpg",
-
           req.file.mimetype,
-
           initialCaption
         );
-
 
       const telegramFileId =
         message.photo?.length
@@ -870,16 +623,9 @@ app.post(
             ].file_id
           : null;
 
-
-      /*
-        Save upload.
-      */
-
       await firebase(
         "PUT",
-
         `hrryKeyUploads/${uploadId}`,
-
         {
           uploadId,
 
@@ -900,59 +646,42 @@ app.post(
           size:
             req.file.size,
 
-          used:
-            false,
+          used: false,
 
           createdAt:
             nowISO()
         }
       );
 
-
       console.log(
         "📸 SCREENSHOT RECEIVED",
         uploadId
       );
 
-
       return res.json({
-
-        ok:
-          true,
-
+        ok: true,
         uploadId,
-
         telegramMessageId:
           message.message_id,
-
         message:
           "Screenshot uploaded successfully."
       });
 
-
-    }
-    catch (error) {
-
+    } catch (error) {
       console.error(
         "❌ Screenshot error:",
         error
       );
 
-      return res
-        .status(500)
-        .json({
-
-          ok:
-            false,
-
-          error:
-            error.message ||
-            "Screenshot upload failed."
-        });
+      return res.status(500).json({
+        ok: false,
+        error:
+          error.message ||
+          "Screenshot upload failed."
+      });
     }
   }
 );
-
 
 /* =========================================================
    CREATE KEY REQUEST
@@ -960,14 +689,8 @@ app.post(
 
 app.post(
   "/api/key-request",
-
-  async (
-    req,
-    res
-  ) => {
-
+  async (req, res) => {
     try {
-
       const {
         name,
         whatsapp,
@@ -977,171 +700,97 @@ app.post(
         telegramFileId
       } = req.body;
 
-
-      /* -----------------------------------------------
-         VALIDATION
-      ------------------------------------------------ */
-
       if (
         !name ||
         !String(name).trim()
       ) {
-
-        return res
-          .status(400)
-          .json({
-            ok:
-              false,
-
-            error:
-              "Student name is required."
-          });
+        return res.status(400).json({
+          ok: false,
+          error:
+            "Student name is required."
+        });
       }
-
 
       if (
         !whatsapp ||
         !String(whatsapp).trim()
       ) {
-
-        return res
-          .status(400)
-          .json({
-            ok:
-              false,
-
-            error:
-              "WhatsApp number is required."
-          });
+        return res.status(400).json({
+          ok: false,
+          error:
+            "WhatsApp number is required."
+        });
       }
-
 
       if (
         !utr ||
         !String(utr).trim()
       ) {
-
-        return res
-          .status(400)
-          .json({
-            ok:
-              false,
-
-            error:
-              "UTR / Transaction ID is required."
-          });
+        return res.status(400).json({
+          ok: false,
+          error:
+            "UTR / Transaction ID is required."
+        });
       }
 
-
-      if (
-        !telegramFileId
-      ) {
-
-        return res
-          .status(400)
-          .json({
-            ok:
-              false,
-
-            error:
-              "Payment screenshot is missing."
-          });
+      if (!telegramFileId) {
+        return res.status(400).json({
+          ok: false,
+          error:
+            "Payment screenshot is missing."
+        });
       }
-
 
       /*
-        telegramFileId is the old
-        frontend field name.
-
-        Its actual value is uploadId.
+        Frontend field name is telegramFileId,
+        but actual value is uploadId.
       */
 
       const uploadId =
-        String(
-          telegramFileId
-        ).trim();
-
-
-      /* -----------------------------------------------
-         GET UPLOAD
-      ------------------------------------------------ */
+        String(telegramFileId).trim();
 
       const uploadData =
         await firebase(
           "GET",
-
           `hrryKeyUploads/${uploadId}`
         );
 
-
-      if (
-        !uploadData
-      ) {
-
-        return res
-          .status(404)
-          .json({
-            ok:
-              false,
-
-            error:
-              "Screenshot upload not found."
-          });
+      if (!uploadData) {
+        return res.status(404).json({
+          ok: false,
+          error:
+            "Screenshot upload not found."
+        });
       }
 
-
-      if (
-        uploadData.used
-      ) {
-
-        return res
-          .status(400)
-          .json({
-            ok:
-              false,
-
-            error:
-              "This screenshot has already been used."
-          });
+      if (uploadData.used) {
+        return res.status(400).json({
+          ok: false,
+          error:
+            "This screenshot has already been used."
+        });
       }
-
-
-      /* -----------------------------------------------
-         REQUEST
-      ------------------------------------------------ */
 
       const requestId =
         generateRequestId();
 
-
       const request = {
-
         requestId,
 
         name:
-          String(
-            name
-          ).trim(),
+          String(name).trim(),
 
         whatsapp:
-          cleanPhone(
-            whatsapp
-          ),
+          cleanPhone(whatsapp),
 
         utr:
-          String(
-            utr
-          ).trim(),
+          String(utr).trim(),
 
         amount:
-          Number(
-            amount
-          ) || 20,
+          Number(amount) || 20,
 
         deviceId:
-          String(
-            deviceId || ""
-          ).trim(),
+          String(deviceId || "").trim(),
 
         uploadId,
 
@@ -1158,11 +807,9 @@ app.post(
           uploadData.telegramFileId ||
           null,
 
-        status:
-          "pending",
+        status: "pending",
 
-        key:
-          null,
+        key: null,
 
         createdAt:
           nowISO(),
@@ -1170,110 +817,61 @@ app.post(
         createdAtReadable:
           readableTime(),
 
-        actionTime:
-          null,
+        actionTime: null,
 
-        acceptedAt:
-          null,
+        acceptedAt: null,
 
-        rejectedAt:
-          null
+        rejectedAt: null
       };
-
-
-      /* -----------------------------------------------
-         SAVE REQUEST
-      ------------------------------------------------ */
 
       await firebase(
         "PUT",
-
         `hrryKeyRequests/${requestId}`,
-
         request
       );
 
-
-      /* -----------------------------------------------
-         MARK UPLOAD USED
-      ------------------------------------------------ */
-
       await firebase(
         "PATCH",
-
         `hrryKeyUploads/${uploadId}`,
-
         {
-          used:
-            true,
-
+          used: true,
           requestId
         }
       );
 
-
-      /* -----------------------------------------------
-         UPDATE SAME TELEGRAM PHOTO
-         AND ADD BUTTONS
-      ------------------------------------------------ */
-
       await editTelegramMessage(
-
         request.telegramChatId,
-
         request.telegramMessageId,
-
-        pendingCaption(
-          request
-        ),
-
-        pendingKeyboard(
-          requestId
-        )
+        pendingCaption(request),
+        pendingKeyboard(requestId)
       );
-
 
       console.log(
         "🔘 ACCEPT / REJECT BUTTONS ADDED:",
         requestId
       );
 
-
       return res.json({
-
-        ok:
-          true,
-
+        ok: true,
         requestId,
-
-        status:
-          "pending"
+        status: "pending"
       });
 
-
-    }
-    catch (error) {
-
+    } catch (error) {
       console.error(
         "❌ Key request error:",
         error
       );
 
-      return res
-        .status(500)
-        .json({
-
-          ok:
-            false,
-
-          error:
-            error.message ||
-            "Key request failed."
-        });
+      return res.status(500).json({
+        ok: false,
+        error:
+          error.message ||
+          "Key request failed."
+      });
     }
   }
 );
-
 
 /* =========================================================
    GET REQUEST
@@ -1281,68 +879,37 @@ app.post(
 
 app.get(
   "/api/key-request/:id",
-
-  async (
-    req,
-    res
-  ) => {
-
+  async (req, res) => {
     try {
-
       const request =
         await firebase(
           "GET",
-
           `hrryKeyRequests/${req.params.id}`
         );
 
-
-      if (
-        !request
-      ) {
-
-        return res
-          .status(404)
-          .json({
-            ok:
-              false,
-
-            error:
-              "Request not found."
-          });
+      if (!request) {
+        return res.status(404).json({
+          ok: false,
+          error:
+            "Request not found."
+        });
       }
 
-
       return res.json({
-
-        ok:
-          true,
-
+        ok: true,
         request
       });
 
+    } catch (error) {
+      console.error(error);
 
-    }
-    catch (error) {
-
-      console.error(
-        error
-      );
-
-      return res
-        .status(500)
-        .json({
-
-          ok:
-            false,
-
-          error:
-            error.message
-        });
+      return res.status(500).json({
+        ok: false,
+        error: error.message
+      });
     }
   }
 );
-
 
 /* =========================================================
    HISTORY BY DEVICE
@@ -1350,95 +917,53 @@ app.get(
 
 app.get(
   "/api/key-requests/device/:deviceId",
-
-  async (
-    req,
-    res
-  ) => {
-
+  async (req, res) => {
     try {
-
       const all =
         await firebase(
           "GET",
-
           "hrryKeyRequests"
         );
 
-
-      if (
-        !all
-      ) {
-
+      if (!all) {
         return res.json({
-          ok:
-            true,
-
-          requests:
-            []
+          ok: true,
+          requests: []
         });
       }
 
-
       const deviceId =
-        String(
-          req.params.deviceId
-        );
-
+        String(req.params.deviceId);
 
       const requests =
-        Object
-          .values(all)
-
+        Object.values(all)
           .filter(
             item =>
               String(
                 item.deviceId || ""
-              ) ===
-              deviceId
+              ) === deviceId
           )
-
           .sort(
             (a, b) =>
-              new Date(
-                b.createdAt
-              ) -
-              new Date(
-                a.createdAt
-              )
+              new Date(b.createdAt) -
+              new Date(a.createdAt)
           );
 
-
       return res.json({
-
-        ok:
-          true,
-
+        ok: true,
         requests
       });
 
+    } catch (error) {
+      console.error(error);
 
-    }
-    catch (error) {
-
-      console.error(
-        error
-      );
-
-      return res
-        .status(500)
-        .json({
-
-          ok:
-            false,
-
-          error:
-            error.message
-        });
+      return res.status(500).json({
+        ok: false,
+        error: error.message
+      });
     }
   }
 );
-
 
 /* =========================================================
    ACCEPT REQUEST
@@ -1448,165 +973,115 @@ async function acceptRequest(
   requestId,
   callbackQueryId
 ) {
-
   const request =
     await firebase(
       "GET",
-
       `hrryKeyRequests/${requestId}`
     );
 
-
-  if (
-    !request
-  ) {
-
+  if (!request) {
     await answerCallback(
       callbackQueryId,
-
       "❌ Request not found.",
-
       true
     );
-
     return;
   }
 
-
-  /*
-    Prevent double action.
-  */
-
-  if (
-    request.status !==
-    "pending"
-  ) {
-
+  if (request.status !== "pending") {
     await answerCallback(
-
       callbackQueryId,
-
       `Already ${String(
         request.status
       ).toUpperCase()}.`,
-
       true
     );
-
     return;
   }
 
-
   /* -----------------------------------------------
-     GENERATE KEY
+     GENERATE UNIQUE KEY
   ------------------------------------------------ */
 
-  let key =
-    generateKey();
+  let key = generateKey();
 
+  let unique = false;
 
-  /*
-    Make sure generated key
-    does not already exist.
-  */
-
-  for (
-    let i = 0;
-    i < 10;
-    i++
-  ) {
-
+  for (let i = 0; i < 10; i++) {
     const exists =
       await firebase(
         "GET",
-
         `licenseKeys/${encodeURIComponent(key)}`
       );
 
-
     if (!exists) {
+      unique = true;
       break;
     }
 
-
-    key =
-      generateKey();
+    key = generateKey();
   }
 
+  if (!unique) {
+    throw new Error(
+      "Could not generate a unique license key."
+    );
+  }
 
   const actionTime =
     readableTime();
 
-
   /* -----------------------------------------------
-     SAVE KEY IN EXISTING
-     licenseKeys SYSTEM
+     SAVE KEY IN EXISTING HRRY TEST APP SYSTEM
   ------------------------------------------------ */
 
   const licenseData = {
+    appName: "hrry.test",
 
-    appName:
-      APP_NAME,
+    status: "active",
 
-    status:
-      "active",
+    blocked: false,
 
-    blocked:
-      false,
+    used: false,
 
-    used:
-      false,
+    boundDeviceId: null,
 
-    boundDeviceId:
-      null,
+    usedAt: null,
 
-    usedAt:
-      null,
+    createdAt: Date.now(),
 
-    createdAt:
-      Date.now(),
-
-    lastVerifiedAt:
-      null,
-
-    source:
-      "telegram_payment",
-
-    requestId,
-
-    studentName:
-      request.name,
-
-    whatsapp:
-      request.whatsapp,
-
-    utr:
-      request.utr,
-
-    paymentAmount:
-      Number(
-        request.amount
-      ) || 20
+    lastVerifiedAt: null
   };
 
+  /*
+    THIS IS THE IMPORTANT PART.
+
+    The existing HRRY test app checks:
+
+      licenseKeys/{key}
+
+    and expects:
+
+      appName = hrry.test
+      status = active
+      blocked != true
+      unused/unbound key
+
+    So we save exactly that structure.
+  */
 
   await firebase(
     "PUT",
-
     `licenseKeys/${encodeURIComponent(key)}`,
-
     licenseData
   );
-
 
   /* -----------------------------------------------
      UPDATE REQUEST
   ------------------------------------------------ */
 
   const update = {
-
-    status:
-      "accepted",
+    status: "accepted",
 
     key,
 
@@ -1616,57 +1091,33 @@ async function acceptRequest(
     actionTime
   };
 
-
   await firebase(
     "PATCH",
-
     `hrryKeyRequests/${requestId}`,
-
     update
   );
 
-
   const finalRequest = {
-
     ...request,
-
     ...update
   };
 
-
   /* -----------------------------------------------
-     UPDATE TELEGRAM
+     UPDATE SAME TELEGRAM MESSAGE
   ------------------------------------------------ */
 
   await editTelegramMessage(
-
     request.telegramChatId,
-
     request.telegramMessageId,
-
-    acceptedCaption(
-      finalRequest
-    ),
-
-    acceptedKeyboard(
-      requestId
-    )
+    acceptedCaption(finalRequest),
+    acceptedKeyboard(requestId)
   );
-
-
-  /* -----------------------------------------------
-     CALLBACK POPUP
-  ------------------------------------------------ */
 
   await answerCallback(
-
     callbackQueryId,
-
     "✅ ACCEPTED — KEY GENERATED",
-
     false
   );
-
 
   console.log(
     "================================"
@@ -1692,10 +1143,14 @@ async function acceptRequest(
   );
 
   console.log(
+    "Firebase path:",
+    `licenseKeys/${key}`
+  );
+
+  console.log(
     "================================"
   );
 }
-
 
 /* =========================================================
    REJECT REQUEST
@@ -1705,66 +1160,39 @@ async function rejectRequest(
   requestId,
   callbackQueryId
 ) {
-
   const request =
     await firebase(
       "GET",
-
       `hrryKeyRequests/${requestId}`
     );
 
-
-  if (
-    !request
-  ) {
-
+  if (!request) {
     await answerCallback(
       callbackQueryId,
-
       "❌ Request not found.",
-
       true
     );
-
     return;
   }
 
-
-  /*
-    Prevent double action.
-  */
-
-  if (
-    request.status !==
-    "pending"
-  ) {
-
+  if (request.status !== "pending") {
     await answerCallback(
-
       callbackQueryId,
-
       `Already ${String(
         request.status
       ).toUpperCase()}.`,
-
       true
     );
-
     return;
   }
-
 
   const actionTime =
     readableTime();
 
-
   const update = {
+    status: "rejected",
 
-    status:
-      "rejected",
-
-    key:
-      null,
+    key: null,
 
     rejectedAt:
       nowISO(),
@@ -1772,62 +1200,29 @@ async function rejectRequest(
     actionTime
   };
 
-
-  /* -----------------------------------------------
-     UPDATE FIREBASE
-  ------------------------------------------------ */
-
   await firebase(
-
     "PATCH",
-
     `hrryKeyRequests/${requestId}`,
-
     update
   );
 
-
   const finalRequest = {
-
     ...request,
-
     ...update
   };
 
-
-  /* -----------------------------------------------
-     UPDATE SAME TELEGRAM MESSAGE
-  ------------------------------------------------ */
-
   await editTelegramMessage(
-
     request.telegramChatId,
-
     request.telegramMessageId,
-
-    rejectedCaption(
-      finalRequest
-    ),
-
-    rejectedKeyboard(
-      requestId
-    )
+    rejectedCaption(finalRequest),
+    rejectedKeyboard(requestId)
   );
-
-
-  /* -----------------------------------------------
-     CALLBACK
-  ------------------------------------------------ */
 
   await answerCallback(
-
     callbackQueryId,
-
     "❌ REQUEST REJECTED",
-
     false
   );
-
 
   console.log(
     "================================"
@@ -1852,7 +1247,6 @@ async function rejectRequest(
   );
 }
 
-
 /* =========================================================
    ANSWER CALLBACK
 ========================================================= */
@@ -1862,26 +1256,20 @@ async function answerCallback(
   text,
   showAlert
 ) {
-
   try {
-
     await telegram(
       "answerCallbackQuery",
       {
         callback_query_id:
           callbackQueryId,
 
-        text:
-          text,
+        text,
 
         show_alert:
           !!showAlert
       }
     );
-
-  }
-  catch (error) {
-
+  } catch (error) {
     console.error(
       "Callback answer error:",
       error.message
@@ -1889,15 +1277,11 @@ async function answerCallback(
   }
 }
 
-
 /* =========================================================
    CALLBACK HANDLER
 ========================================================= */
 
-async function handleCallback(
-  callback
-) {
-
+async function handleCallback(callback) {
   const callbackId =
     callback.id;
 
@@ -1910,7 +1294,6 @@ async function handleCallback(
     String(
       callback.data || ""
     );
-
 
   console.log(
     "--------------------------------"
@@ -1939,123 +1322,93 @@ async function handleCallback(
     "--------------------------------"
   );
 
-
-  /*
-    SECURITY CHECK
-  */
+  /* -----------------------------------------------
+     ADMIN SECURITY
+  ------------------------------------------------ */
 
   if (
     fromId !==
     ADMIN_TELEGRAM_ID
   ) {
-
     console.log(
       "❌ UNAUTHORIZED CALLBACK:",
       fromId
     );
 
     await answerCallback(
-
       callbackId,
-
       "❌ You are not authorized as admin.",
-
       true
     );
 
     return;
   }
 
-
   /* -----------------------------------------------
      ACCEPT
   ------------------------------------------------ */
 
   if (
-    data.startsWith(
-      "accept:"
-    )
+    data.startsWith("accept:")
   ) {
-
     const requestId =
       data.substring(
         "accept:".length
       );
 
-
     try {
-
       await acceptRequest(
         requestId,
         callbackId
       );
-
-    }
-    catch (error) {
-
+    } catch (error) {
       console.error(
         "❌ ACCEPT ERROR:",
         error
       );
 
       await answerCallback(
-
         callbackId,
-
         "❌ Accept failed. Check Render logs.",
-
         true
       );
     }
 
     return;
   }
-
 
   /* -----------------------------------------------
      REJECT
   ------------------------------------------------ */
 
   if (
-    data.startsWith(
-      "reject:"
-    )
+    data.startsWith("reject:")
   ) {
-
     const requestId =
       data.substring(
         "reject:".length
       );
 
-
     try {
-
       await rejectRequest(
         requestId,
         callbackId
       );
-
-    }
-    catch (error) {
-
+    } catch (error) {
       console.error(
         "❌ REJECT ERROR:",
         error
       );
 
       await answerCallback(
-
         callbackId,
-
         "❌ Reject failed. Check Render logs.",
-
         true
       );
     }
 
     return;
   }
-
 
   /* -----------------------------------------------
      STATUS BUTTON
@@ -2066,73 +1419,46 @@ async function handleCallback(
       "status:accepted:"
     )
   ) {
-
     await answerCallback(
-
       callbackId,
-
       "🟢 Already accepted by admin.",
-
       false
     );
 
     return;
   }
-
 
   if (
     data.startsWith(
       "status:rejected:"
     )
   ) {
-
     await answerCallback(
-
       callbackId,
-
       "🔴 Already rejected by admin.",
-
       false
     );
 
     return;
   }
 
-
   await answerCallback(
-
     callbackId,
-
     "Unknown action.",
-
     false
   );
 }
 
-
 /* =========================================================
-   TELEGRAM LONG POLLING
+   TELEGRAM POLLING
 ========================================================= */
 
 let pollingOffset = 0;
 
-let pollingRunning =
-  false;
-
-
-/*
-  Remove webhook before starting
-  getUpdates polling.
-
-  This is important because Telegram
-  cannot use webhook and getUpdates
-  together.
-*/
+let pollingRunning = false;
 
 async function prepareTelegram() {
-
   try {
-
     const result =
       await telegram(
         "deleteWebhook",
@@ -2142,15 +1468,12 @@ async function prepareTelegram() {
         }
       );
 
-
     console.log(
       "🧹 Telegram webhook removed:",
       result
     );
 
-  }
-  catch (error) {
-
+  } catch (error) {
     console.error(
       "❌ deleteWebhook error:",
       error.message
@@ -2158,34 +1481,23 @@ async function prepareTelegram() {
   }
 }
 
-
 /* =========================================================
    POLLING LOOP
 ========================================================= */
 
 async function telegramPolling() {
-
-  if (
-    pollingRunning
-  ) {
+  if (pollingRunning) {
     return;
   }
 
-  pollingRunning =
-    true;
-
+  pollingRunning = true;
 
   console.log(
     "🤖 TELEGRAM CALLBACK POLLING STARTED"
   );
 
-
-  while (
-    pollingRunning
-  ) {
-
+  while (pollingRunning) {
     try {
-
       const url =
         TELEGRAM_API +
         "/getUpdates?timeout=30" +
@@ -2200,13 +1512,11 @@ async function telegramPolling() {
           ])
         );
 
-
       const response =
         await fetch(
           url,
           {
-            method:
-              "GET",
+            method: "GET",
 
             signal:
               AbortSignal.timeout(
@@ -2215,44 +1525,29 @@ async function telegramPolling() {
           }
         );
 
-
       const data =
         await response.json();
 
-
-      if (
-        !data.ok
-      ) {
-
+      if (!data.ok) {
         console.error(
           "❌ Telegram getUpdates:",
           data
         );
 
-
-        /*
-          409 usually means
-          another process is polling
-          the same bot.
-        */
-
         if (
-          data.error_code ===
-          409
+          data.error_code === 409
         ) {
-
           console.error(
-            "🚨 TELEGRAM 409 CONFLICT:"
+            "🚨 TELEGRAM 409 CONFLICT"
           );
 
           console.error(
-            "Another Render/server instance is using this bot token."
+            "Another server is polling this bot."
           );
 
           console.error(
-            "Stop the old instance and keep only ONE polling server."
+            "Keep only ONE Render instance."
           );
-
 
           await new Promise(
             resolve =>
@@ -2263,48 +1558,38 @@ async function telegramPolling() {
           );
         }
 
-
         continue;
       }
 
-
       const updates =
         data.result || [];
-
 
       for (
         const update
         of updates
       ) {
-
         /*
-          IMPORTANT:
-          Advance offset BEFORE processing
-          so same callback isn't processed twice.
+          Advance offset before processing
+          to prevent duplicate callbacks.
         */
 
         pollingOffset =
           update.update_id + 1;
 
-
         if (
           update.callback_query
         ) {
-
           await handleCallback(
             update.callback_query
           );
         }
       }
 
-    }
-    catch (error) {
-
+    } catch (error) {
       console.error(
         "❌ Telegram polling error:",
         error.message
       );
-
 
       await new Promise(
         resolve =>
@@ -2317,7 +1602,6 @@ async function telegramPolling() {
   }
 }
 
-
 /* =========================================================
    GENERAL ERROR
 ========================================================= */
@@ -2329,45 +1613,34 @@ app.use(
     res,
     next
   ) => {
-
     console.error(
       "❌ SERVER ERROR:",
       error
     );
 
-
     if (
       error.code ===
       "LIMIT_FILE_SIZE"
     ) {
-
       return res
         .status(400)
         .json({
-
-          ok:
-            false,
-
+          ok: false,
           error:
             "Screenshot must be 5 MB or smaller."
         });
     }
 
-
     return res
       .status(500)
       .json({
-
-        ok:
-          false,
-
+        ok: false,
         error:
           error.message ||
           "Internal server error."
       });
   }
 );
-
 
 /* =========================================================
    START
@@ -2377,7 +1650,6 @@ app.listen(
   PORT,
   "0.0.0.0",
   async () => {
-
     console.log(
       "======================================"
     );
@@ -2414,10 +1686,9 @@ app.listen(
       "======================================"
     );
 
-
     /*
-      Prepare Telegram first,
-      then start callback polling.
+      Telegram webhook हटाकर
+      polling शुरू किया जाएगा.
     */
 
     await prepareTelegram();
