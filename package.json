@@ -1,7 +1,7 @@
 {
   "name": "hrry-key-bot",
   "version": "1.0.0",
-  "description": "HRRY Key Request Bot and API",
+  "description": "HRRY Key Request Telegram Bot",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
