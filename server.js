@@ -1,675 +1,193 @@
-require("dotenv").config();
-
-const express = require("express");
-const cors = require("cors");
-const multer = require("multer");
-const crypto = require("crypto");
-
 /* =========================================================
-   APP
+   TELEGRAM BINDING SYSTEM
 ========================================================= */
 
-const app = express();
-
-const PORT = process.env.PORT || 3000;
-
-const BOT_TOKEN = process.env.BOT_TOKEN || "";
-
-const TELEGRAM_CHAT_ID = String(
-  process.env.TELEGRAM_CHAT_ID || "-1004330203694"
-);
-
-const ADMIN_TELEGRAM_ID = String(
-  process.env.ADMIN_TELEGRAM_ID || "8458244469"
-);
-
-const FIREBASE_DATABASE_URL = (
-  process.env.FIREBASE_DATABASE_URL ||
-  "https://hyuuu-732f9-default-rtdb.firebaseio.com"
-).replace(/\/$/, "");
-
-const FIREBASE_AUTH_TOKEN =
-  process.env.FIREBASE_AUTH_TOKEN || "";
-
-/*
-  IMPORTANT:
-  Existing HRRY test app expects this exact app name.
-*/
-const APP_NAME = "hrry.test";
-
-if (!BOT_TOKEN) {
-  console.error("❌ BOT_TOKEN missing");
-  process.exit(1);
-}
-
-/* =========================================================
-   EXPRESS
-========================================================= */
-
-app.use(
-  cors({
-    origin: "*",
-    methods: [
-      "GET",
-      "POST",
-      "PATCH",
-      "PUT",
-      "OPTIONS"
-    ],
-    allowedHeaders: [
-      "Content-Type",
-      "Authorization"
-    ]
-  })
-);
-
-app.use(
-  express.json({
-    limit: "10mb"
-  })
-);
-
-app.use(
-  express.urlencoded({
-    extended: true
-  })
-);
-
-/* =========================================================
-   MULTER
-========================================================= */
-
-const upload = multer({
-  storage: multer.memoryStorage(),
-
-  limits: {
-    fileSize: 5 * 1024 * 1024
-  },
-
-  fileFilter: (req, file, cb) => {
-    const allowed = [
-      "image/jpeg",
-      "image/jpg",
-      "image/png",
-      "image/webp"
-    ];
-
-    if (!allowed.includes(file.mimetype)) {
-      return cb(
-        new Error(
-          "Only JPG, PNG and WEBP images are allowed."
-        )
-      );
-    }
-
-    cb(null, true);
-  }
-});
-
-/* =========================================================
-   BASIC HELPERS
-========================================================= */
-
-function nowISO() {
-  return new Date().toISOString();
-}
-
-function readableTime(date = new Date()) {
-  return new Intl.DateTimeFormat("en-IN", {
-    timeZone: "Asia/Kolkata",
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: true
-  }).format(date);
-}
-
-function escapeHTML(value) {
-  return String(value ?? "")
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#039;");
-}
-
-function cleanPhone(value) {
-  return String(value || "")
-    .replace(/[^\d+]/g, "")
+const BOT_USERNAME =
+  String(process.env.BOT_USERNAME || "")
+    .replace(/^@/, "")
     .trim();
-}
 
-function generateRequestId() {
+const TELEGRAM_BIND_EXPIRY =
+  10 * 60 * 1000; // 10 minutes
+
+const TELEGRAM_SESSION_EXPIRY =
+  30 * 24 * 60 * 60 * 1000; // 30 days
+
+
+function generateTelegramBindToken() {
   return (
-    "REQ-" +
-    Date.now().toString(36).toUpperCase() +
-    "-" +
-    crypto.randomBytes(4).toString("hex").toUpperCase()
+    "bind_" +
+    crypto.randomBytes(24).toString("hex")
   );
 }
 
-/*
-  EXACT SAME KEY STYLE AS HRRY TEST APP
 
-  HRRY-XXXX-XXXX-XXXX
-*/
-
-function generateKey() {
-  const chars =
-    "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
-
-  let key = "HRRY-";
-
-  for (let block = 0; block < 4; block++) {
-    if (block > 0) {
-      key += "-";
-    }
-
-    for (let i = 0; i < 4; i++) {
-      key +=
-        chars[
-          Math.floor(
-            Math.random() * chars.length
-          )
-        ];
-    }
-  }
-
-  return key;
+function generateTelegramSessionToken() {
+  return crypto.randomBytes(48).toString("hex");
 }
 
-/* =========================================================
-   FIREBASE
-========================================================= */
 
-function firebaseURL(path) {
-  let url =
-    FIREBASE_DATABASE_URL +
-    "/" +
-    path.replace(/^\/+/, "") +
-    ".json";
-
-  if (FIREBASE_AUTH_TOKEN) {
-    url +=
-      "?auth=" +
-      encodeURIComponent(
-        FIREBASE_AUTH_TOKEN
-      );
-  }
-
-  return url;
-}
-
-async function firebase(method, path, body) {
-  const options = {
-    method,
-    headers: {
-      "Content-Type": "application/json"
-    }
-  };
-
-  if (body !== undefined) {
-    options.body = JSON.stringify(body);
-  }
-
-  const response = await fetch(
-    firebaseURL(path),
-    options
-  );
-
-  const text = await response.text();
-
-  let data = null;
-
+async function getTelegramProfilePhoto(userId) {
   try {
-    data = text ? JSON.parse(text) : null;
-  } catch {
-    data = text;
-  }
-
-  if (!response.ok) {
-    throw new Error(
-      `Firebase ${response.status}: ${text}`
-    );
-  }
-
-  return data;
-}
-
-/* =========================================================
-   TELEGRAM API
-========================================================= */
-
-const TELEGRAM_API =
-  `https://api.telegram.org/bot${BOT_TOKEN}`;
-
-async function telegram(method, body = {}) {
-  const response = await fetch(
-    `${TELEGRAM_API}/${method}`,
-    {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify(body)
-    }
-  );
-
-  const data = await response.json();
-
-  if (!data.ok) {
-    throw new Error(
-      `Telegram ${method} failed: ` +
-      JSON.stringify(data)
-    );
-  }
-
-  return data.result;
-}
-
-/* =========================================================
-   SEND PHOTO
-========================================================= */
-
-async function sendTelegramPhoto(
-  buffer,
-  filename,
-  mimeType,
-  caption
-) {
-  const form = new FormData();
-
-  const blob = new Blob(
-    [buffer],
-    {
-      type:
-        mimeType ||
-        "image/jpeg"
-    }
-  );
-
-  form.append(
-    "chat_id",
-    TELEGRAM_CHAT_ID
-  );
-
-  form.append(
-    "photo",
-    blob,
-    filename || "payment.jpg"
-  );
-
-  form.append(
-    "caption",
-    caption
-  );
-
-  form.append(
-    "parse_mode",
-    "HTML"
-  );
-
-  const response = await fetch(
-    `${TELEGRAM_API}/sendPhoto`,
-    {
-      method: "POST",
-      body: form
-    }
-  );
-
-  const data = await response.json();
-
-  if (!data.ok) {
-    throw new Error(
-      "Telegram sendPhoto failed: " +
-      JSON.stringify(data)
-    );
-  }
-
-  return data.result;
-}
-
-/* =========================================================
-   TELEGRAM CAPTIONS
-========================================================= */
-
-function pendingCaption(r) {
-  return `
-<b>💳 PAYMENT KEY REQUEST RECEIVED</b>
-
-━━━━━━━━━━━━━━━━━━━━
-
-👤 <b>Student Name:</b>
-${escapeHTML(r.name)}
-
-📱 <b>WhatsApp Number:</b>
-${escapeHTML(r.whatsapp)}
-
-💰 <b>Payment Amount:</b>
-₹${escapeHTML(r.amount)}
-
-🔢 <b>UTR / Transaction ID:</b>
-<code>${escapeHTML(r.utr)}</code>
-
-🆔 <b>Request ID:</b>
-<code>${escapeHTML(r.requestId)}</code>
-
-📅 <b>Time:</b>
-${escapeHTML(r.createdAtReadable)}
-
-━━━━━━━━━━━━━━━━━━━━
-
-⏳ <b>Status:</b>
-🟡 WAITING FOR ADMIN ACTION
-
-👇 <b>Choose an action:</b>
-`.trim();
-}
-
-function acceptedCaption(r) {
-  return `
-<b>💳 PAYMENT KEY REQUEST RECEIVED</b>
-
-━━━━━━━━━━━━━━━━━━━━
-
-👤 <b>Student Name:</b>
-${escapeHTML(r.name)}
-
-📱 <b>WhatsApp Number:</b>
-${escapeHTML(r.whatsapp)}
-
-💰 <b>Payment Amount:</b>
-₹${escapeHTML(r.amount)}
-
-🔢 <b>UTR / Transaction ID:</b>
-<code>${escapeHTML(r.utr)}</code>
-
-🆔 <b>Request ID:</b>
-<code>${escapeHTML(r.requestId)}</code>
-
-📅 <b>Request Time:</b>
-${escapeHTML(r.createdAtReadable)}
-
-━━━━━━━━━━━━━━━━━━━━
-
-🟢 <b>ACCEPTED BY ADMIN</b>
-
-🔑 <b>GENERATED KEY:</b>
-
-<code>${escapeHTML(r.key)}</code>
-
-👑 <b>Accepted by Admin</b>
-
-🕐 <b>Action Time:</b>
-${escapeHTML(r.actionTime)}
-
-━━━━━━━━━━━━━━━━━━━━
-
-✅ <b>PAYMENT VERIFIED</b>
-`.trim();
-}
-
-function rejectedCaption(r) {
-  return `
-<b>💳 PAYMENT KEY REQUEST RECEIVED</b>
-
-━━━━━━━━━━━━━━━━━━━━
-
-👤 <b>Student Name:</b>
-${escapeHTML(r.name)}
-
-📱 <b>WhatsApp Number:</b>
-${escapeHTML(r.whatsapp)}
-
-💰 <b>Payment Amount:</b>
-₹${escapeHTML(r.amount)}
-
-🔢 <b>UTR / Transaction ID:</b>
-<code>${escapeHTML(r.utr)}</code>
-
-🆔 <b>Request ID:</b>
-<code>${escapeHTML(r.requestId)}</code>
-
-📅 <b>Request Time:</b>
-${escapeHTML(r.createdAtReadable)}
-
-━━━━━━━━━━━━━━━━━━━━
-
-🔴 <b>REJECTED BY ADMIN</b>
-
-❌ <b>Payment request rejected.</b>
-
-🕐 <b>Action Time:</b>
-${escapeHTML(r.actionTime)}
-
-━━━━━━━━━━━━━━━━━━━━
-
-❌ <b>REQUEST REJECTED</b>
-`.trim();
-}
-
-/* =========================================================
-   TELEGRAM BUTTONS
-========================================================= */
-
-function pendingKeyboard(requestId) {
-  return {
-    inline_keyboard: [
-      [
+    const photos =
+      await telegram(
+        "getUserProfilePhotos",
         {
-          text: "✅ ACCEPT",
-          callback_data:
-            `accept:${requestId}`
-        },
-        {
-          text: "❌ REJECT",
-          callback_data:
-            `reject:${requestId}`
+          user_id: Number(userId),
+          limit: 1
         }
-      ]
-    ]
+      );
+
+    if (
+      !photos ||
+      !photos.photos ||
+      !photos.photos.length
+    ) {
+      return null;
+    }
+
+    const sizes =
+      photos.photos[0];
+
+    const largest =
+      sizes[sizes.length - 1];
+
+    return {
+      fileId: largest.file_id,
+      width: largest.width,
+      height: largest.height
+    };
+
+  } catch (error) {
+    console.error(
+      "Telegram profile photo error:",
+      error.message
+    );
+
+    return null;
+  }
+}
+
+
+async function createTelegramProfile(user) {
+
+  const telegramId =
+    String(user.id);
+
+  const firstName =
+    String(user.first_name || "")
+      .trim();
+
+  const lastName =
+    String(user.last_name || "")
+      .trim();
+
+  const fullName =
+    `${firstName} ${lastName}`
+      .trim();
+
+  const username =
+    user.username
+      ? String(user.username)
+      : "";
+
+  const photo =
+    await getTelegramProfilePhoto(
+      telegramId
+    );
+
+  return {
+    telegramId,
+
+    username,
+
+    name:
+      fullName ||
+      username ||
+      telegramId,
+
+    firstName,
+
+    lastName,
+
+    photoFileId:
+      photo?.fileId || null,
+
+    photoWidth:
+      photo?.width || null,
+
+    photoHeight:
+      photo?.height || null,
+
+    updatedAt:
+      nowISO()
   };
 }
 
-function acceptedKeyboard(requestId) {
-  return {
-    inline_keyboard: [
-      [
-        {
-          text: "🟢 ACCEPTED BY ADMIN",
-          callback_data:
-            `status:accepted:${requestId}`
-        }
-      ]
-    ]
-  };
-}
-
-function rejectedKeyboard(requestId) {
-  return {
-    inline_keyboard: [
-      [
-        {
-          text: "🔴 REJECTED BY ADMIN",
-          callback_data:
-            `status:rejected:${requestId}`
-        }
-      ]
-    ]
-  };
-}
 
 /* =========================================================
-   EDIT TELEGRAM MESSAGE
-========================================================= */
-
-async function editTelegramMessage(
-  chatId,
-  messageId,
-  caption,
-  keyboard
-) {
-  return telegram(
-    "editMessageCaption",
-    {
-      chat_id: chatId,
-      message_id: Number(messageId),
-      caption,
-      parse_mode: "HTML",
-      reply_markup: keyboard
-    }
-  );
-}
-
-/* =========================================================
-   HOME
-========================================================= */
-
-app.get("/", (req, res) => {
-  res.send(`
-<!doctype html>
-<html>
-<head>
-<title>${escapeHTML(APP_NAME)}</title>
-<meta name="viewport"
-content="width=device-width,initial-scale=1">
-</head>
-
-<body style="
-margin:0;
-padding:40px;
-background:#090b10;
-color:white;
-font-family:Arial;
-text-align:center;
-">
-
-<h1>HRRY KEY SERVER</h1>
-
-<p>Server is running ✅</p>
-
-<p>
-Telegram callback system:
-ACTIVE
-</p>
-
-</body>
-</html>
-`);
-});
-
-/* =========================================================
-   HEALTH
-========================================================= */
-
-app.get("/health", (req, res) => {
-  res.json({
-    ok: true,
-    server: "online",
-    telegram: "direct-api-polling",
-    callbacks: "enabled",
-    app: APP_NAME,
-    time: nowISO()
-  });
-});
-
-/* =========================================================
-   UPLOAD SCREENSHOT
+   START TELEGRAM BINDING
 ========================================================= */
 
 app.post(
-  "/api/upload-screenshot",
-  upload.single("screenshot"),
+  "/api/telegram/bind-start",
   async (req, res) => {
+
     try {
-      if (!req.file) {
-        return res.status(400).json({
+
+      if (!BOT_USERNAME) {
+        return res.status(500).json({
           ok: false,
           error:
-            "Payment screenshot is required."
+            "BOT_USERNAME is not configured."
         });
       }
 
-      const uploadId =
-        crypto.randomUUID();
+      const bindToken =
+        generateTelegramBindToken();
 
-      const initialCaption = `
-<b>📸 PAYMENT SCREENSHOT RECEIVED</b>
+      const createdAt =
+        Date.now();
 
-━━━━━━━━━━━━━━━━━━━━
-
-⏳ <b>Waiting for student details...</b>
-
-🆔 Upload ID:
-
-<code>${uploadId}</code>
-`.trim();
-
-      const message =
-        await sendTelegramPhoto(
-          req.file.buffer,
-          req.file.originalname ||
-            "payment.jpg",
-          req.file.mimetype,
-          initialCaption
-        );
-
-      const telegramFileId =
-        message.photo?.length
-          ? message.photo[
-              message.photo.length - 1
-            ].file_id
-          : null;
+      const expiresAt =
+        createdAt +
+        TELEGRAM_BIND_EXPIRY;
 
       await firebase(
         "PUT",
-        `hrryKeyUploads/${uploadId}`,
+        `telegramBindTokens/${bindToken}`,
         {
-          uploadId,
+          token: bindToken,
 
-          telegramChatId:
-            TELEGRAM_CHAT_ID,
+          status: "pending",
 
-          telegramMessageId:
-            message.message_id,
+          createdAt,
 
-          telegramFileId,
+          expiresAt,
 
-          originalName:
-            req.file.originalname,
+          telegramId: null,
 
-          mimeType:
-            req.file.mimetype,
-
-          size:
-            req.file.size,
-
-          used: false,
-
-          createdAt:
-            nowISO()
+          profile: null
         }
       );
 
-      console.log(
-        "📸 SCREENSHOT RECEIVED",
-        uploadId
-      );
+      const botLink =
+        `https://t.me/${BOT_USERNAME}?start=${encodeURIComponent(bindToken)}`;
 
       return res.json({
         ok: true,
-        uploadId,
-        telegramMessageId:
-          message.message_id,
-        message:
-          "Screenshot uploaded successfully."
+
+        token: bindToken,
+
+        botLink,
+
+        expiresAt
       });
 
     } catch (error) {
+
       console.error(
-        "❌ Screenshot error:",
+        "Telegram bind-start error:",
         error
       );
 
@@ -677,189 +195,142 @@ app.post(
         ok: false,
         error:
           error.message ||
-          "Screenshot upload failed."
+          "Could not start Telegram binding."
       });
     }
   }
 );
 
+
 /* =========================================================
-   CREATE KEY REQUEST
+   TELEGRAM BIND STATUS
 ========================================================= */
 
-app.post(
-  "/api/key-request",
+app.get(
+  "/api/telegram/bind-status/:token",
   async (req, res) => {
+
     try {
-      const {
-        name,
-        whatsapp,
-        utr,
-        amount,
-        deviceId,
-        telegramFileId
-      } = req.body;
 
-      if (
-        !name ||
-        !String(name).trim()
-      ) {
+      const token =
+        String(
+          req.params.token || ""
+        ).trim();
+
+      if (!token) {
         return res.status(400).json({
           ok: false,
           error:
-            "Student name is required."
+            "Binding token is required."
+        });
+      }
+
+      const data =
+        await firebase(
+          "GET",
+          `telegramBindTokens/${token}`
+        );
+
+      if (!data) {
+        return res.status(404).json({
+          ok: false,
+          error:
+            "Binding session not found."
         });
       }
 
       if (
-        !whatsapp ||
-        !String(whatsapp).trim()
+        data.expiresAt &&
+        Date.now() > Number(data.expiresAt)
       ) {
-        return res.status(400).json({
-          ok: false,
-          error:
-            "WhatsApp number is required."
+
+        return res.json({
+          ok: true,
+          status: "expired"
         });
       }
 
       if (
-        !utr ||
-        !String(utr).trim()
+        data.status !== "bound" ||
+        !data.profile
       ) {
-        return res.status(400).json({
-          ok: false,
-          error:
-            "UTR / Transaction ID is required."
-        });
-      }
 
-      if (!telegramFileId) {
-        return res.status(400).json({
-          ok: false,
-          error:
-            "Payment screenshot is missing."
+        return res.json({
+          ok: true,
+          status: "pending"
         });
       }
 
       /*
-        Frontend field name is telegramFileId,
-        but actual value is uploadId.
+        Create permanent session
+        after Telegram binding.
       */
 
-      const uploadId =
-        String(telegramFileId).trim();
+      const sessionToken =
+        generateTelegramSessionToken();
 
-      const uploadData =
-        await firebase(
-          "GET",
-          `hrryKeyUploads/${uploadId}`
-        );
+      const sessionCreated =
+        Date.now();
 
-      if (!uploadData) {
-        return res.status(404).json({
-          ok: false,
-          error:
-            "Screenshot upload not found."
-        });
-      }
-
-      if (uploadData.used) {
-        return res.status(400).json({
-          ok: false,
-          error:
-            "This screenshot has already been used."
-        });
-      }
-
-      const requestId =
-        generateRequestId();
-
-      const request = {
-        requestId,
-
-        name:
-          String(name).trim(),
-
-        whatsapp:
-          cleanPhone(whatsapp),
-
-        utr:
-          String(utr).trim(),
-
-        amount:
-          Number(amount) || 20,
-
-        deviceId:
-          String(deviceId || "").trim(),
-
-        uploadId,
-
-        telegramChatId:
-          String(
-            uploadData.telegramChatId ||
-            TELEGRAM_CHAT_ID
-          ),
-
-        telegramMessageId:
-          uploadData.telegramMessageId,
-
-        telegramFileId:
-          uploadData.telegramFileId ||
-          null,
-
-        status: "pending",
-
-        key: null,
-
-        createdAt:
-          nowISO(),
-
-        createdAtReadable:
-          readableTime(),
-
-        actionTime: null,
-
-        acceptedAt: null,
-
-        rejectedAt: null
-      };
+      const sessionExpires =
+        sessionCreated +
+        TELEGRAM_SESSION_EXPIRY;
 
       await firebase(
         "PUT",
-        `hrryKeyRequests/${requestId}`,
-        request
+        `telegramSessions/${sessionToken}`,
+        {
+          sessionToken,
+
+          telegramId:
+            data.profile.telegramId,
+
+          profile:
+            data.profile,
+
+          createdAt:
+            sessionCreated,
+
+          expiresAt:
+            sessionExpires,
+
+          active: true
+        }
       );
+
+      /*
+        Remove bind token after
+        successful session creation.
+      */
 
       await firebase(
         "PATCH",
-        `hrryKeyUploads/${uploadId}`,
+        `telegramBindTokens/${token}`,
         {
-          used: true,
-          requestId
+          status: "completed",
+
+          sessionCreatedAt:
+            nowISO(),
+
+          sessionToken: null
         }
-      );
-
-      await editTelegramMessage(
-        request.telegramChatId,
-        request.telegramMessageId,
-        pendingCaption(request),
-        pendingKeyboard(requestId)
-      );
-
-      console.log(
-        "🔘 ACCEPT / REJECT BUTTONS ADDED:",
-        requestId
       );
 
       return res.json({
         ok: true,
-        requestId,
-        status: "pending"
+
+        status: "verified",
+
+        sessionToken,
+
+        profile:
+          data.profile
       });
 
     } catch (error) {
+
       console.error(
-        "❌ Key request error:",
+        "Telegram bind-status error:",
         error
       );
 
@@ -867,832 +338,575 @@ app.post(
         ok: false,
         error:
           error.message ||
-          "Key request failed."
+          "Binding status check failed."
       });
     }
   }
 );
 
+
 /* =========================================================
-   GET REQUEST
+   VERIFY SAVED TELEGRAM SESSION
 ========================================================= */
 
-app.get(
-  "/api/key-request/:id",
+app.post(
+  "/api/telegram/verify-session",
   async (req, res) => {
-    try {
-      const request =
-        await firebase(
-          "GET",
-          `hrryKeyRequests/${req.params.id}`
-        );
 
-      if (!request) {
-        return res.status(404).json({
+    try {
+
+      const sessionToken =
+        String(
+          req.body?.sessionToken || ""
+        ).trim();
+
+      if (!sessionToken) {
+        return res.status(401).json({
           ok: false,
+          verified: false,
           error:
-            "Request not found."
+            "Telegram session missing."
         });
       }
 
-      return res.json({
-        ok: true,
-        request
-      });
-
-    } catch (error) {
-      console.error(error);
-
-      return res.status(500).json({
-        ok: false,
-        error: error.message
-      });
-    }
-  }
-);
-
-/* =========================================================
-   HISTORY BY DEVICE
-========================================================= */
-
-app.get(
-  "/api/key-requests/device/:deviceId",
-  async (req, res) => {
-    try {
-      const all =
+      const session =
         await firebase(
           "GET",
-          "hrryKeyRequests"
+          `telegramSessions/${sessionToken}`
         );
 
-      if (!all) {
-        return res.json({
-          ok: true,
-          requests: []
+      if (!session) {
+        return res.status(401).json({
+          ok: false,
+          verified: false,
+          error:
+            "Telegram session not found."
         });
       }
 
-      const deviceId =
-        String(req.params.deviceId);
-
-      const requests =
-        Object.values(all)
-          .filter(
-            item =>
-              String(
-                item.deviceId || ""
-              ) === deviceId
-          )
-          .sort(
-            (a, b) =>
-              new Date(b.createdAt) -
-              new Date(a.createdAt)
-          );
-
-      return res.json({
-        ok: true,
-        requests
-      });
-
-    } catch (error) {
-      console.error(error);
-
-      return res.status(500).json({
-        ok: false,
-        error: error.message
-      });
-    }
-  }
-);
-
-/* =========================================================
-   ACCEPT REQUEST
-========================================================= */
-
-async function acceptRequest(
-  requestId,
-  callbackQueryId
-) {
-  const request =
-    await firebase(
-      "GET",
-      `hrryKeyRequests/${requestId}`
-    );
-
-  if (!request) {
-    await answerCallback(
-      callbackQueryId,
-      "❌ Request not found.",
-      true
-    );
-    return;
-  }
-
-  if (request.status !== "pending") {
-    await answerCallback(
-      callbackQueryId,
-      `Already ${String(
-        request.status
-      ).toUpperCase()}.`,
-      true
-    );
-    return;
-  }
-
-  /* -----------------------------------------------
-     GENERATE UNIQUE KEY
-  ------------------------------------------------ */
-
-  let key = generateKey();
-
-  let unique = false;
-
-  for (let i = 0; i < 10; i++) {
-    const exists =
-      await firebase(
-        "GET",
-        `licenseKeys/${encodeURIComponent(key)}`
-      );
-
-    if (!exists) {
-      unique = true;
-      break;
-    }
-
-    key = generateKey();
-  }
-
-  if (!unique) {
-    throw new Error(
-      "Could not generate a unique license key."
-    );
-  }
-
-  const actionTime =
-    readableTime();
-
-  /* -----------------------------------------------
-     SAVE KEY IN EXISTING HRRY TEST APP SYSTEM
-  ------------------------------------------------ */
-
-  const licenseData = {
-    appName: "hrry.test",
-
-    status: "active",
-
-    blocked: false,
-
-    used: false,
-
-    boundDeviceId: null,
-
-    usedAt: null,
-
-    createdAt: Date.now(),
-
-    lastVerifiedAt: null
-  };
-
-  /*
-    THIS IS THE IMPORTANT PART.
-
-    The existing HRRY test app checks:
-
-      licenseKeys/{key}
-
-    and expects:
-
-      appName = hrry.test
-      status = active
-      blocked != true
-      unused/unbound key
-
-    So we save exactly that structure.
-  */
-
-  await firebase(
-    "PUT",
-    `licenseKeys/${encodeURIComponent(key)}`,
-    licenseData
-  );
-
-  /* -----------------------------------------------
-     UPDATE REQUEST
-  ------------------------------------------------ */
-
-  const update = {
-    status: "accepted",
-
-    key,
-
-    acceptedAt:
-      nowISO(),
-
-    actionTime
-  };
-
-  await firebase(
-    "PATCH",
-    `hrryKeyRequests/${requestId}`,
-    update
-  );
-
-  const finalRequest = {
-    ...request,
-    ...update
-  };
-
-  /* -----------------------------------------------
-     UPDATE SAME TELEGRAM MESSAGE
-  ------------------------------------------------ */
-
-  await editTelegramMessage(
-    request.telegramChatId,
-    request.telegramMessageId,
-    acceptedCaption(finalRequest),
-    acceptedKeyboard(requestId)
-  );
-
-  await answerCallback(
-    callbackQueryId,
-    "✅ ACCEPTED — KEY GENERATED",
-    false
-  );
-
-  console.log(
-    "================================"
-  );
-
-  console.log(
-    "✅ PAYMENT ACCEPTED"
-  );
-
-  console.log(
-    "Request:",
-    requestId
-  );
-
-  console.log(
-    "Key:",
-    key
-  );
-
-  console.log(
-    "Student:",
-    request.name
-  );
-
-  console.log(
-    "Firebase path:",
-    `licenseKeys/${key}`
-  );
-
-  console.log(
-    "================================"
-  );
-}
-
-/* =========================================================
-   REJECT REQUEST
-========================================================= */
-
-async function rejectRequest(
-  requestId,
-  callbackQueryId
-) {
-  const request =
-    await firebase(
-      "GET",
-      `hrryKeyRequests/${requestId}`
-    );
-
-  if (!request) {
-    await answerCallback(
-      callbackQueryId,
-      "❌ Request not found.",
-      true
-    );
-    return;
-  }
-
-  if (request.status !== "pending") {
-    await answerCallback(
-      callbackQueryId,
-      `Already ${String(
-        request.status
-      ).toUpperCase()}.`,
-      true
-    );
-    return;
-  }
-
-  const actionTime =
-    readableTime();
-
-  const update = {
-    status: "rejected",
-
-    key: null,
-
-    rejectedAt:
-      nowISO(),
-
-    actionTime
-  };
-
-  await firebase(
-    "PATCH",
-    `hrryKeyRequests/${requestId}`,
-    update
-  );
-
-  const finalRequest = {
-    ...request,
-    ...update
-  };
-
-  await editTelegramMessage(
-    request.telegramChatId,
-    request.telegramMessageId,
-    rejectedCaption(finalRequest),
-    rejectedKeyboard(requestId)
-  );
-
-  await answerCallback(
-    callbackQueryId,
-    "❌ REQUEST REJECTED",
-    false
-  );
-
-  console.log(
-    "================================"
-  );
-
-  console.log(
-    "❌ PAYMENT REJECTED"
-  );
-
-  console.log(
-    "Request:",
-    requestId
-  );
-
-  console.log(
-    "Student:",
-    request.name
-  );
-
-  console.log(
-    "================================"
-  );
-}
-
-/* =========================================================
-   ANSWER CALLBACK
-========================================================= */
-
-async function answerCallback(
-  callbackQueryId,
-  text,
-  showAlert
-) {
-  try {
-    await telegram(
-      "answerCallbackQuery",
-      {
-        callback_query_id:
-          callbackQueryId,
-
-        text,
-
-        show_alert:
-          !!showAlert
+      if (
+        session.active !== true
+      ) {
+        return res.status(401).json({
+          ok: false,
+          verified: false,
+          error:
+            "Telegram session is inactive."
+        });
       }
-    );
-  } catch (error) {
-    console.error(
-      "Callback answer error:",
-      error.message
-    );
-  }
-}
 
-/* =========================================================
-   CALLBACK HANDLER
-========================================================= */
+      if (
+        session.expiresAt &&
+        Date.now() >
+          Number(session.expiresAt)
+      ) {
 
-async function handleCallback(callback) {
-  const callbackId =
-    callback.id;
-
-  const fromId =
-    String(
-      callback.from?.id || ""
-    );
-
-  const data =
-    String(
-      callback.data || ""
-    );
-
-  console.log(
-    "--------------------------------"
-  );
-
-  console.log(
-    "🔘 TELEGRAM CALLBACK RECEIVED"
-  );
-
-  console.log(
-    "Admin/User ID:",
-    fromId
-  );
-
-  console.log(
-    "Callback:",
-    data
-  );
-
-  console.log(
-    "Expected Admin:",
-    ADMIN_TELEGRAM_ID
-  );
-
-  console.log(
-    "--------------------------------"
-  );
-
-  /* -----------------------------------------------
-     ADMIN SECURITY
-  ------------------------------------------------ */
-
-  if (
-    fromId !==
-    ADMIN_TELEGRAM_ID
-  ) {
-    console.log(
-      "❌ UNAUTHORIZED CALLBACK:",
-      fromId
-    );
-
-    await answerCallback(
-      callbackId,
-      "❌ You are not authorized as admin.",
-      true
-    );
-
-    return;
-  }
-
-  /* -----------------------------------------------
-     ACCEPT
-  ------------------------------------------------ */
-
-  if (
-    data.startsWith("accept:")
-  ) {
-    const requestId =
-      data.substring(
-        "accept:".length
-      );
-
-    try {
-      await acceptRequest(
-        requestId,
-        callbackId
-      );
-    } catch (error) {
-      console.error(
-        "❌ ACCEPT ERROR:",
-        error
-      );
-
-      await answerCallback(
-        callbackId,
-        "❌ Accept failed. Check Render logs.",
-        true
-      );
-    }
-
-    return;
-  }
-
-  /* -----------------------------------------------
-     REJECT
-  ------------------------------------------------ */
-
-  if (
-    data.startsWith("reject:")
-  ) {
-    const requestId =
-      data.substring(
-        "reject:".length
-      );
-
-    try {
-      await rejectRequest(
-        requestId,
-        callbackId
-      );
-    } catch (error) {
-      console.error(
-        "❌ REJECT ERROR:",
-        error
-      );
-
-      await answerCallback(
-        callbackId,
-        "❌ Reject failed. Check Render logs.",
-        true
-      );
-    }
-
-    return;
-  }
-
-  /* -----------------------------------------------
-     STATUS BUTTON
-  ------------------------------------------------ */
-
-  if (
-    data.startsWith(
-      "status:accepted:"
-    )
-  ) {
-    await answerCallback(
-      callbackId,
-      "🟢 Already accepted by admin.",
-      false
-    );
-
-    return;
-  }
-
-  if (
-    data.startsWith(
-      "status:rejected:"
-    )
-  ) {
-    await answerCallback(
-      callbackId,
-      "🔴 Already rejected by admin.",
-      false
-    );
-
-    return;
-  }
-
-  await answerCallback(
-    callbackId,
-    "Unknown action.",
-    false
-  );
-}
-
-/* =========================================================
-   TELEGRAM POLLING
-========================================================= */
-
-let pollingOffset = 0;
-
-let pollingRunning = false;
-
-async function prepareTelegram() {
-  try {
-    const result =
-      await telegram(
-        "deleteWebhook",
-        {
-          drop_pending_updates:
-            false
-        }
-      );
-
-    console.log(
-      "🧹 Telegram webhook removed:",
-      result
-    );
-
-  } catch (error) {
-    console.error(
-      "❌ deleteWebhook error:",
-      error.message
-    );
-  }
-}
-
-/* =========================================================
-   POLLING LOOP
-========================================================= */
-
-async function telegramPolling() {
-  if (pollingRunning) {
-    return;
-  }
-
-  pollingRunning = true;
-
-  console.log(
-    "🤖 TELEGRAM CALLBACK POLLING STARTED"
-  );
-
-  while (pollingRunning) {
-    try {
-      const url =
-        TELEGRAM_API +
-        "/getUpdates?timeout=30" +
-        "&offset=" +
-        encodeURIComponent(
-          pollingOffset
-        ) +
-        "&allowed_updates=" +
-        encodeURIComponent(
-          JSON.stringify([
-            "callback_query"
-          ])
-        );
-
-      const response =
-        await fetch(
-          url,
+        await firebase(
+          "PATCH",
+          `telegramSessions/${sessionToken}`,
           {
-            method: "GET",
-
-            signal:
-              AbortSignal.timeout(
-                40000
-              )
+            active: false
           }
         );
 
-      const data =
-        await response.json();
-
-      if (!data.ok) {
-        console.error(
-          "❌ Telegram getUpdates:",
-          data
-        );
-
-        if (
-          data.error_code === 409
-        ) {
-          console.error(
-            "🚨 TELEGRAM 409 CONFLICT"
-          );
-
-          console.error(
-            "Another server is polling this bot."
-          );
-
-          console.error(
-            "Keep only ONE Render instance."
-          );
-
-          await new Promise(
-            resolve =>
-              setTimeout(
-                resolve,
-                5000
-              )
-          );
-        }
-
-        continue;
+        return res.status(401).json({
+          ok: false,
+          verified: false,
+          error:
+            "Telegram session expired."
+        });
       }
 
-      const updates =
-        data.result || [];
+      /*
+        Refresh expiry.
+      */
 
-      for (
-        const update
-        of updates
-      ) {
-        /*
-          Advance offset before processing
-          to prevent duplicate callbacks.
-        */
+      const newExpiry =
+        Date.now() +
+        TELEGRAM_SESSION_EXPIRY;
 
-        pollingOffset =
-          update.update_id + 1;
-
-        if (
-          update.callback_query
-        ) {
-          await handleCallback(
-            update.callback_query
-          );
+      await firebase(
+        "PATCH",
+        `telegramSessions/${sessionToken}`,
+        {
+          expiresAt: newExpiry,
+          lastVerifiedAt: nowISO()
         }
-      }
+      );
+
+      return res.json({
+        ok: true,
+
+        verified: true,
+
+        profile:
+          session.profile,
+
+        expiresAt:
+          newExpiry
+      });
 
     } catch (error) {
+
       console.error(
-        "❌ Telegram polling error:",
+        "Telegram session verify error:",
+        error
+      );
+
+      return res.status(500).json({
+        ok: false,
+        verified: false,
+        error:
+          error.message ||
+          "Telegram verification failed."
+      });
+    }
+  }
+);
+
+
+/* =========================================================
+   TELEGRAM PROFILE PHOTO PROXY
+========================================================= */
+
+app.get(
+  "/api/telegram/photo/:fileId",
+  async (req, res) => {
+
+    try {
+
+      const fileId =
+        String(
+          req.params.fileId || ""
+        ).trim();
+
+      if (!fileId) {
+        return res.status(400).end();
+      }
+
+      const file =
+        await telegram(
+          "getFile",
+          {
+            file_id: fileId
+          }
+        );
+
+      if (
+        !file ||
+        !file.file_path
+      ) {
+        return res.status(404).end();
+      }
+
+      const photoResponse =
+        await fetch(
+          `https://api.telegram.org/file/bot${BOT_TOKEN}/${file.file_path}`
+        );
+
+      if (!photoResponse.ok) {
+        return res.status(404).end();
+      }
+
+      const contentType =
+        photoResponse.headers.get(
+          "content-type"
+        ) ||
+        "image/jpeg";
+
+      res.setHeader(
+        "Content-Type",
+        contentType
+      );
+
+      res.setHeader(
+        "Cache-Control",
+        "public, max-age=86400"
+      );
+
+      const buffer =
+        Buffer.from(
+          await photoResponse.arrayBuffer()
+        );
+
+      return res.send(buffer);
+
+    } catch (error) {
+
+      console.error(
+        "Telegram photo proxy error:",
         error.message
       );
 
-      await new Promise(
-        resolve =>
-          setTimeout(
-            resolve,
-            2500
-          )
-      );
+      return res.status(404).end();
     }
-  }
-}
-
-/* =========================================================
-   GENERAL ERROR
-========================================================= */
-
-app.use(
-  (
-    error,
-    req,
-    res,
-    next
-  ) => {
-    console.error(
-      "❌ SERVER ERROR:",
-      error
-    );
-
-    if (
-      error.code ===
-      "LIMIT_FILE_SIZE"
-    ) {
-      return res
-        .status(400)
-        .json({
-          ok: false,
-          error:
-            "Screenshot must be 5 MB or smaller."
-        });
-    }
-
-    return res
-      .status(500)
-      .json({
-        ok: false,
-        error:
-          error.message ||
-          "Internal server error."
-      });
   }
 );
 
+
 /* =========================================================
-   START
+   TELEGRAM BIND MESSAGE
 ========================================================= */
 
-app.listen(
-  PORT,
-  "0.0.0.0",
-  async () => {
-    console.log(
-      "======================================"
-    );
+async function handleTelegramBindMessage(
+  message
+) {
 
-    console.log(
-      `🚀 ${APP_NAME} SERVER ONLINE`
-    );
+  try {
 
-    console.log(
-      `🌐 PORT: ${PORT}`
-    );
+    if (!message) {
+      return;
+    }
 
-    console.log(
-      `📢 TELEGRAM CHAT: ${TELEGRAM_CHAT_ID}`
-    );
+    const text =
+      String(
+        message.text || ""
+      ).trim();
 
-    console.log(
-      `👑 ADMIN TELEGRAM ID: ${ADMIN_TELEGRAM_ID}`
-    );
+    if (!text) {
+      return;
+    }
 
-    console.log(
-      "💰 PAYMENT: ₹20"
-    );
+    /*
+      Only /start bind_xxx
+    */
 
-    console.log(
-      "🔘 ACCEPT / REJECT CALLBACK: ENABLED"
-    );
+    const match =
+      text.match(
+        /^\/start(?:@\w+)?\s+(bind_[A-Za-z0-9]+)$/i
+      );
 
-    console.log(
-      "🔑 LICENSE KEY SAVE: ENABLED"
-    );
+    if (!match) {
+      return;
+    }
 
-    console.log(
-      "======================================"
+    const bindToken =
+      match[1];
+
+    const telegramUser =
+      message.from;
+
+    if (!telegramUser?.id) {
+      return;
+    }
+
+    const bindData =
+      await firebase(
+        "GET",
+        `telegramBindTokens/${bindToken}`
+      );
+
+    if (!bindData) {
+
+      await telegram(
+        "sendMessage",
+        {
+          chat_id:
+            message.chat.id,
+
+          text:
+            "❌ Binding session not found.\n\nPlease go back to the website and press Bind Telegram again."
+        }
+      );
+
+      return;
+    }
+
+    if (
+      bindData.status !==
+      "pending"
+    ) {
+
+      await telegram(
+        "sendMessage",
+        {
+          chat_id:
+            message.chat.id,
+
+          text:
+            "⚠️ This binding session has already been used or completed."
+        }
+      );
+
+      return;
+    }
+
+    if (
+      bindData.expiresAt &&
+      Date.now() >
+        Number(bindData.expiresAt)
+    ) {
+
+      await firebase(
+        "PATCH",
+        `telegramBindTokens/${bindToken}`,
+        {
+          status: "expired"
+        }
+      );
+
+      await telegram(
+        "sendMessage",
+        {
+          chat_id:
+            message.chat.id,
+
+          text:
+            "⌛ This binding session expired.\n\nPlease start a new binding from the website."
+        }
+      );
+
+      return;
+    }
+
+    const profile =
+      await createTelegramProfile(
+        telegramUser
+      );
+
+    await firebase(
+      "PATCH",
+      `telegramBindTokens/${bindToken}`,
+      {
+        status: "bound",
+
+        telegramId:
+          profile.telegramId,
+
+        profile,
+
+        boundAt:
+          nowISO(),
+
+        telegramChatId:
+          String(
+            message.chat.id
+          )
+      }
     );
 
     /*
-      Telegram webhook हटाकर
-      polling शुरू किया जाएगा.
+      Permanent Telegram user record.
     */
 
-    await prepareTelegram();
+    await firebase(
+      "PUT",
+      `telegramUsers/${profile.telegramId}`,
+      {
+        ...profile,
 
-    telegramPolling();
+        telegramChatId:
+          String(
+            message.chat.id
+          ),
+
+        lastBoundAt:
+          nowISO(),
+
+        active: true
+      }
+    );
+
+    /*
+      Confirmation inside Telegram.
+    */
+
+    const usernameText =
+      profile.username
+        ? `@${profile.username}`
+        : "No username";
+
+    await telegram(
+      "sendMessage",
+      {
+        chat_id:
+          message.chat.id,
+
+        text:
+`✅ Telegram Binding Successful
+
+👤 Name: ${profile.name}
+🔹 Username: ${usernameText}
+🆔 Telegram ID: ${profile.telegramId}
+
+You can now return to the website.
+
+Your Telegram account has been verified automatically.`
+      }
+    );
+
+    /*
+      ADMIN NOTIFICATION
+    */
+
+    const adminText =
+`<b>🔗 NEW TELEGRAM BINDING</b>
+
+━━━━━━━━━━━━━━━━━━━━
+
+👤 <b>Name:</b>
+${escapeHTML(profile.name)}
+
+🔹 <b>Username:</b>
+${escapeHTML(
+  profile.username
+    ? "@" + profile.username
+    : "No username"
+)}
+
+🆔 <b>Telegram ID:</b>
+<code>${escapeHTML(
+  profile.telegramId
+)}</code>
+
+📸 <b>Profile Photo:</b>
+${
+  profile.photoFileId
+    ? "Available"
+    : "Not available"
+}
+
+🕐 <b>Time:</b>
+${escapeHTML(
+  readableTime()
+)}
+
+━━━━━━━━━━━━━━━━━━━━`;
+
+    try {
+
+      if (
+        profile.photoFileId
+      ) {
+
+        const file =
+          await telegram(
+            "getFile",
+            {
+              file_id:
+                profile.photoFileId
+            }
+          );
+
+        if (
+          file?.file_path
+        ) {
+
+          const photoResponse =
+            await fetch(
+              `https://api.telegram.org/file/bot${BOT_TOKEN}/${file.file_path}`
+            );
+
+          if (
+            photoResponse.ok
+          ) {
+
+            const buffer =
+              Buffer.from(
+                await photoResponse.arrayBuffer()
+              );
+
+            await sendTelegramPhoto(
+              buffer,
+              "telegram-profile.jpg",
+              photoResponse.headers.get(
+                "content-type"
+              ) ||
+                "image/jpeg",
+              adminText
+            );
+
+          } else {
+
+            await telegram(
+              "sendMessage",
+              {
+                chat_id:
+                  ADMIN_TELEGRAM_ID,
+
+                text:
+                  adminText,
+
+                parse_mode:
+                  "HTML"
+              }
+            );
+          }
+
+        } else {
+
+          await telegram(
+            "sendMessage",
+            {
+              chat_id:
+                ADMIN_TELEGRAM_ID,
+
+              text:
+                adminText,
+
+              parse_mode:
+                "HTML"
+            }
+          );
+        }
+
+      } else {
+
+        await telegram(
+          "sendMessage",
+          {
+            chat_id:
+              ADMIN_TELEGRAM_ID,
+
+            text:
+              adminText,
+
+            parse_mode:
+              "HTML"
+          }
+        );
+      }
+
+    } catch (adminError) {
+
+      console.error(
+        "Admin Telegram binding notification error:",
+        adminError.message
+      );
+    }
+
+    console.log(
+      "================================"
+    );
+
+    console.log(
+      "🔗 TELEGRAM ACCOUNT BOUND"
+    );
+
+    console.log(
+      "Name:",
+      profile.name
+    );
+
+    console.log(
+      "Username:",
+      profile.username
+    );
+
+    console.log(
+      "Telegram ID:",
+      profile.telegramId
+    );
+
+    console.log(
+      "================================"
+    );
+
+  } catch (error) {
+
+    console.error(
+      "❌ Telegram bind message error:",
+      error
+    );
   }
-);
+}
